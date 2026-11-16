@@ -19,7 +19,18 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+// NOTE: do NOT type this with Next.js LayoutProps<"/">. That helper only
+// exists after `next dev` / `next build` / `next typegen` generates the
+// route types (next-env.d.ts / .next/types), which are gitignored and do
+// not exist in a fresh CI checkout — so `tsc --noEmit` fails there with
+// "Cannot find name LayoutProps" (CI run #1). The docs own Root Layout
+// example uses { children: React.ReactNode }, which needs no generated
+// types and typechecks anywhere.
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html lang="en" className={`${inter.variable} h-full antialiased`}>
       <body className="flex min-h-full flex-col">
