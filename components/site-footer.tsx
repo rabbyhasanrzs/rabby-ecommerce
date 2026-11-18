@@ -96,7 +96,7 @@ export default function SiteFooter() {
           </p>
           <p>Follow us: Facebook · Instagram · X (links coming soon)</p>
           <p>
-            © <CopyrightYear /> Rabby
+            © <CopyrightYear /> RabbY
           </p>
         </div>
       </div>

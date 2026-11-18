@@ -7,9 +7,10 @@ The name Rabby is temporary and can be rebranded in future.
 **Status: S-0 foundation only.** This repository contains the Next.js
 scaffold, the approved design tokens, the global layout (header + footer),
 placeholder pages for every sitemap route, CI, and the test harness.
-There is no catalogue, no checkout, no payment, no Vercel project, and no
-Supabase project yet. Every page is clearly labelled placeholder demo
-content. No product data or prices exist in this repository.
+There is no catalogue, no checkout, no payment, and no Vercel project.
+The Supabase test project exists but has no tables yet (they land in
+S-1). Every page is clearly labelled placeholder demo content. No product
+data or prices exist in this repository.
 
 The **Final Approved Design Blueprint** is the single source of truth for
 this project. It lives outside this repository (owner's workspace) and is
@@ -23,8 +24,9 @@ the blueprint governs.
 - **Styling:** Tailwind CSS v4 (`@theme` tokens in `app/globals.css`)
 - **Testing:** Vitest + Testing Library (jsdom)
 - **CI/CD:** GitHub Actions (lint → typecheck → test → build)
-- **Database / Auth / Storage:** PostgreSQL via Supabase — **not yet set up**
-  (no Supabase project exists; no Supabase client code in S-0)
+- **Database / Auth / Storage:** PostgreSQL via Supabase — test project
+  `rabby-ecommerce-test` exists (Singapore, Free); no tables yet in S-0
+  — tables land in S-1 (anon-key read-only client in `lib/supabase/`)
 - **Hosting:** Vercel — **not yet set up**
 
 ## How to run
