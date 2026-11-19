@@ -157,6 +157,20 @@ async function expectDenied(name, method, path, body) {
   check(name, denied(r), `HTTP ${r.status} (expected 401 or 403)`);
 }
 
+// PostgREST + RLS semantics for UPDATE/DELETE: with no UPDATE/DELETE
+// policy, RLS silently filters the row out — the operation returns HTTP 200
+// with an EMPTY array (0 rows affected), NOT 401/403. Only INSERT errors
+// out (401). So for PATCH/DELETE, pass = 401/403, or 200 with 0 rows
+// changed. The section-3 sanity checks (row still exists, price unchanged)
+// are the real proof no write landed. (Verified live 2026-11-19: anon
+// PATCH on sample-round-a returned HTTP 200 with body [].)
+async function expectDeniedWrite(name, method, path, body) {
+  const r = await rest(method, path, body);
+  const noRowsChanged = r.status === 200 && Array.isArray(r.data) && r.data.length === 0;
+  check(name, denied(r) || noRowsChanged,
+    `HTTP ${r.status} (expected 401/403, or 200 with 0 rows changed)`);
+}
+
 const probeSlug = "rls-probe-should-never-exist";
 await expectDenied("anon INSERT into products is denied", "POST", "products",
   { slug: probeSlug, name: "RLS probe", price_bdt: 1, stock_total: 0, status: "active", is_demo: true });
@@ -170,13 +184,13 @@ await expectDenied("anon INSERT into product_measurements is denied", "POST", "p
   { product_id: "00000000-0000-4000-8000-000000000000", lens_width_mm: 50 });
 
 // UPDATE/DELETE target a real seeded slug — a 2xx here would mean RLS is off.
-await expectDenied("anon UPDATE on products is denied", "PATCH",
+await expectDeniedWrite("anon UPDATE on products is denied", "PATCH",
   "products?slug=eq.sample-round-a", { price_bdt: 1 });
-await expectDenied("anon DELETE on products is denied", "DELETE",
+await expectDeniedWrite("anon DELETE on products is denied", "DELETE",
   "products?slug=eq.sample-round-a");
-await expectDenied("anon UPDATE on categories is denied", "PATCH",
+await expectDeniedWrite("anon UPDATE on categories is denied", "PATCH",
   "categories?slug=eq.women", { name: "RLS probe" });
-await expectDenied("anon DELETE on categories is denied", "DELETE",
+await expectDeniedWrite("anon DELETE on categories is denied", "DELETE",
   "categories?slug=eq.women");
 
 // ---------------------------------------------------------------------------
