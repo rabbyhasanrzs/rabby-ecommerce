@@ -1,0 +1,19 @@
+# Dependabot — Rabby e-commerce (audit G-M9/G-M12)
+# Weekly updates for npm dependencies and GitHub Actions, as PRs against main.
+# Action updates keep the SHA pins in .github/workflows/ci.yml current
+# (Dependabot updates the SHA and the tag comment together).
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    target-branch: "main"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    target-branch: "main"

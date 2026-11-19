@@ -1,37 +1,64 @@
 @import "tailwindcss";
 
 /*
- * Rabby design tokens — Final Approved Design Blueprint, Section 8.
+ * RabbY design tokens — Final Approved Design Blueprint, Section 8.
  * Approved Baseline (initial); final approval granted by the owner's
  * approval of the Final Approved Design Blueprint (2026-11-17).
  * A token changes only by a recorded change (old value, new value, reason,
  * date) with contrast recalculated on any colour change.
  * No hard-coded hex in any component — use these tokens.
+ *
+ * TOKEN CHANGE — 2026-11-18 (owner master instruction, 2026-11-17):
+ * Premium palette supersedes the blueprint tokens (prototype look ported
+ * to the real site). Old value -> new value, reason:
+ *   background        #fafafa  -> #F7F4EF (Warm Ivory)
+ *   background-subtle #f5f5f5  -> #EFECE6 (Light Neutral)
+ *   text              #222222  -> #171717 (Charcoal)
+ *   text-secondary    #666666  -> #5C5C5C (Soft Grey #747474 darkened;
+ *                                  #747474 on ivory is ~4.6:1, #5C5C5C is
+ *                                  ~6.1:1 — passes WCAG 2.2 AA)
+ *   action            RabbY Red   -> #7A263A (Deep Burgundy; replaces RabbY Red)
+ *   action-hover      old dark red -> #611E2E (darker burgundy)
+ *   action-active     old darkest red -> #4C1824 (darker burgundy)
+ *   sale              old sale red -> #7A263A (Deep Burgundy)
+ *   border            #e5e5e5  -> #E5E1DB (Border Grey)
+ *   border-strong     #c9c4b8  -> #D8C7AC (Champagne Beige)
+ *   stock-in/success  #067647  -> #287A50 (Success)
+ *   stock-low         #b54708  -> #B7791F (Warning; warning text darkened
+ *                                  for ~5.3:1, passes WCAG 2.2 AA)
+ *   stock-out         #667085  -> #747474 (Soft Grey)
+ *   error             old error red -> #C43D3D (Error)
+ *   focus             #222222  -> #7A263A (Deep Burgundy focus rings)
+ * Fonts: Playfair Display added for headings/wordmark; Inter kept for
+ * body/UI. No functionality, copy, prices, or flows changed with this port.
  */
 @theme {
-  --color-background: #fafafa;
-  --color-background-subtle: #f5f5f5;
+  --color-background: #f7f4ef;
+  --color-background-subtle: #efece6;
   --color-surface: #ffffff;
-  --color-surface-hover: #f5f5f5;
-  --color-text: #222222;
-  --color-text-secondary: #666666;
+  --color-surface-hover: #efece6;
+  --color-text: #171717;
+  --color-text-secondary: #5c5c5c;
   --color-text-disabled: #9ca3af;
   --color-text-inverse: #ffffff;
-  --color-action: #d62828;
-  --color-action-hover: #b91f1f;
-  --color-action-active: #991b1b;
+  --color-action: #7a263a;
+  --color-action-hover: #611e2e;
+  --color-action-active: #4c1824;
   --color-action-disabled: #d0d5dd;
-  --color-sale: #b42318;
-  --color-border: #e5e5e5;
-  --color-border-strong: #c9c4b8;
-  --color-stock-in: #067647;
-  --color-stock-low: #b54708;
-  --color-stock-out: #667085;
-  --color-success: #067647;
-  --color-error: #b42318;
-  --color-focus: #222222;
+  --color-sale: #7a263a;
+  --color-border: #e5e1db;
+  --color-border-strong: #d8c7ac;
+  --color-stock-in: #287a50;
+  --color-stock-low: #b7791f;
+  --color-stock-out: #747474;
+  --color-success: #287a50;
+  --color-error: #c43d3d;
+  --color-warning: #b7791f;
+  --color-champagne: #d8c7ac;
+  --color-focus: #7a263a;
 
-  /* Inter (confirmed) with system sans-serif fallback. */
+  /* Playfair Display for headings/wordmark, Inter for body/UI. */
+  --font-display: var(--font-playfair), Georgia, "Times New Roman", serif;
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 }

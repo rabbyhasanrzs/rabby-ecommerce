@@ -22,7 +22,7 @@ const ITEMS = [
 export default function TrustStrip() {
   return (
     <section
-      aria-label="Why shop with Rabby"
+      aria-label="Why shop with RabbY"
       className="border-y border-border bg-surface"
     >
       <ul className="mx-auto grid w-full max-w-7xl grid-cols-1 gap-6 px-4 py-8 sm:grid-cols-3 md:px-8">
