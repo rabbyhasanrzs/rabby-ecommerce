@@ -88,3 +88,5 @@ Supabase test projects (T-03 — owner sets these up separately).
 Work on feature branches with Pull Requests for review. Never modify
 `main` directly. No merge without the owner's approval. No product data,
 prices, or secrets in any commit.
+
+<!-- Preview redeploy trigger (2026-11-19): Supabase env vars set to All Environments; rebuild so the preview picks them up. -->
