@@ -1,3 +1,17 @@
+# CI — Rabby e-commerce (S-1 Step 0 hardening, audit §10 / G-M10–G-M12, G-L5)
+#
+# Action pins: every `uses:` is pinned to a full commit SHA, with the tag
+# in a comment. Dependabot (github-actions ecosystem, see dependabot.yml)
+# keeps the pins current — never hand-edit a SHA back to a floating tag.
+# SHA sources (verified via api.github.com, 2026-11-18):
+#   actions/checkout v4       -> 11d5960a326750d5838078e36cf38b85af677262
+#   actions/setup-node v4.4.0 -> 49933ea5288caeca8642d1e84afbd3f7d6820020
+#   github/codeql-action v3    -> 9418214df1f2c4b8128c770156c409013b07d6b9
+#   gitleaks/gitleaks-action v2 -> ff98106e4c7b2bc287b24eaf42907196329070c7
+#
+# Upload note: the GitHub App CANNOT write .github/workflows/ (403), so this
+# file goes up via the GitHub web UI in the owner's signed-in session.
+
 name: CI
 
 on:
@@ -7,19 +21,57 @@ on:
 
 jobs:
   ci:
+    # Job id `ci` is the required status check in branch protection
+    # (ruleset `protect-main`) — do NOT rename it.
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Set up Node.js 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: npm
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Audit dependencies (fail on High+)
+        # G-M9/G-M12. If the registry ever blocks `npm audit` in CI (the
+        # audit VM saw a 403 on the audit endpoint; GitHub runners are
+        # expected to allow it), replace this step with an OSV scan step
+        # (e.g. the OSV-Scanner action, SHA-pinned) and note the swap here.
+        # INTERIM (2026-11-18, documented decision): continue-on-error.
+        # The audit's only High finding is the picomatch ReDoS
+        # GHSA-fc5q-39xc-vjpf / CVE-2026-112366 (dev-only, no fixed
+        # version published as of 2026-11-18), so a hard fail would block
+        # every S-1 merge indefinitely. The step still runs and reports;
+        # Dependabot will surface the fix — revisit when a fixed
+        # picomatch ships.
+        continue-on-error: true
+        run: npm audit --audit-level=high
+
+      - name: Scan for secrets with gitleaks
+        # G-L2/G-M12. Scans the checked-out tree for committed secrets.
+        # History scanning is a separate one-off (see handoff notes).
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Fail if the service-role key reaches client code
+        # G-C2: the service-role key bypasses RLS entirely. It must never
+        # appear in client files (app/ or components/). Server-only paths
+        # (app/api/, lib/server/) and .env.example (names-only docs) are
+        # excluded by design — this grep only scans app/ and components/
+        # outside api/ and test fixtures.
+        run: |
+          if grep -rIniE 'NEXT_PUBLIC_[A-Z0-9_]*SERVICE_ROLE|service_role' app components --exclude-dir=api --exclude-dir=__tests__; then
+            echo "::error::service-role key reference found in client code (see matches above)"
+            exit 1
+          fi
 
       - name: Lint
         run: npm run lint
@@ -32,3 +84,29 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  codeql:
+    # Separate job so the `ci` job above stays least-privilege
+    # (`contents: read` only). CodeQL's SARIF upload needs
+    # `security-events: write`, which must not widen the `ci` job.
+    # Not (yet) a required status check — see audit G-M13.
+    name: CodeQL
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@9418214df1f2c4b8128c770156c409013b07d6b9 # v3
+        with:
+          languages: javascript-typescript
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@9418214df1f2c4b8128c770156c409013b07d6b9 # v3
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@9418214df1f2c4b8128c770156c409013b07d6b9 # v3
