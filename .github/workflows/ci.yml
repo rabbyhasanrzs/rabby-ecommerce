@@ -6,8 +6,12 @@
 # SHA sources (verified via api.github.com, 2026-11-18):
 #   actions/checkout v4       -> 11d5960a326750d5838078e36cf38b85af677262
 #   actions/setup-node v4.4.0 -> 49933ea5288caeca8642d1e84afbd3f7d6820020
-#   github/codeql-action v3    -> 9418214df1f2c4b8128c770156c409013b07d6b9
 #   gitleaks/gitleaks-action v2 -> ff98106e4c7b2bc287b24eaf42907196329070c7
+#
+# CodeQL is NOT in this file: Code Scanning Default setup is enabled on the
+# repo (verified 2026-11-19) and already runs CodeQL Analyze. A CodeQL job
+# here (advanced setup) submits SARIF that Default setup rejects, so the
+# workflow must not contain one (fix 2026-11-19 — see PR #2 checks).
 #
 # Upload note: the GitHub App CANNOT write .github/workflows/ (403), so this
 # file goes up via the GitHub web UI in the owner's signed-in session.
@@ -29,6 +33,11 @@ jobs:
     steps:
       - name: Check out
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # Full history: gitleaks scans a commit range (base^..HEAD) and
+          # fails on a shallow checkout because the base commit is missing
+          # ("fatal: ambiguous argument"). Fix 2026-11-19 — see PR #2 checks.
+          fetch-depth: 0
 
       - name: Set up Node.js 22
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -84,29 +93,3 @@ jobs:
 
       - name: Build
         run: npm run build
-
-  codeql:
-    # Separate job so the `ci` job above stays least-privilege
-    # (`contents: read` only). CodeQL's SARIF upload needs
-    # `security-events: write`, which must not widen the `ci` job.
-    # Not (yet) a required status check — see audit G-M13.
-    name: CodeQL
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      security-events: write
-      actions: read
-    steps:
-      - name: Check out
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@9418214df1f2c4b8128c770156c409013b07d6b9 # v3
-        with:
-          languages: javascript-typescript
-
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@9418214df1f2c4b8128c770156c409013b07d6b9 # v3
-
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@9418214df1f2c4b8128c770156c409013b07d6b9 # v3
