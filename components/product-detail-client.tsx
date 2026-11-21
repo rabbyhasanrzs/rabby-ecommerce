@@ -4,6 +4,7 @@ import FaceShapeIcon from "@/components/face-shape-icon";
 import { ChevronLeftIcon, ChevronRightIcon } from "@/components/icons";
 import MeasurementDiagram from "@/components/measurement-diagram";
 import ProductImage from "@/components/product-image";
+import { useBag } from "@/lib/bag-context";
 import { formatPriceBdt, stockLabel } from "@/lib/format";
 import {
   faceShapeChipLabel,
@@ -35,7 +36,8 @@ import { useState } from "react";
  * the product price and product stock always apply; a variant is
  * available iff the product has stock.
  *
- * No bag/checkout in S-1 (S-2): out-of-stock products show
+ * Add to Bag (S-2): adds one unit of the selected colour variant and
+ * opens the mini-cart drawer. Out-of-stock products show
  * "Out of Stock" and no purchase control.
  */
 
@@ -52,6 +54,7 @@ export default function ProductDetailClient({
 }: {
   product: ProductDetail;
 }) {
+  const { addItem } = useBag();
   const [selectedImage, setSelectedImage] = useState(0);
   const [selectedVariant, setSelectedVariant] = useState(0);
 
@@ -281,9 +284,24 @@ export default function ProductDetailClient({
             in S-2.
           </p>
         ) : (
-          <p className="mt-8 rounded-md border border-border bg-background-subtle px-4 py-3 text-base text-text-secondary">
-            Bag and checkout arrive in S-2 — browsing only in S-1.
-          </p>
+          <button
+            type="button"
+            onClick={() =>
+              addItem(
+                {
+                  slug: product.slug,
+                  name: product.name,
+                  priceBdt: product.price_bdt,
+                  image: currentImage?.storage_path ?? null,
+                  variantColour: variant?.colour ?? null,
+                },
+                product.stock_total,
+              )
+            }
+            className="mt-8 flex min-h-11 w-full items-center justify-center rounded-md bg-action px-4 py-3 text-base font-semibold text-text-inverse hover:bg-action-hover"
+          >
+            Add to Bag
+          </button>
         )}
       </div>
     </div>

@@ -1,24 +1,37 @@
 // ============================================================================
-// Rabby e-commerce — S-1 RLS test (anon key only, read + denied-write probes)
+// Rabby e-commerce — S-1 + S-2 RLS test (anon key only, read + denied-write probes)
 // File: supabase/rls-test.mjs
 //
 // WHAT IT DOES
 //   Probes the Supabase PostgREST endpoints with the ANON key and checks the
-//   deny-by-default RLS contract from audit §5 / migration 0001:
+//   deny-by-default RLS contract from audit §5 / migrations 0001 + 0003:
+//   S-1:
 //     * anon SELECT returns rows ONLY for public rows
 //       (categories is_active=true, products status='active', and the
 //       variant/image/measurement rows of active products only)
 //     * anon INSERT / UPDATE / DELETE on every S-1 table is DENIED
 //       (PostgREST returns 401 or 403 for an RLS denial)
+//   S-2:
+//     * anon SELECT on orders / order_items / order_status_events returns
+//       0 rows — there are NO policies on these tables at all, so even
+//       SELECT is denied; orders are readable ONLY through the SECURITY
+//       DEFINER lookup function (reference + phone).
+//     * anon INSERT into orders / order_items is DENIED (401/403).
+//     * the SECURITY DEFINER functions exist and behave: lookup returns
+//       null for an unknown reference, and create rejects invalid input
+//       (the invalid-input probe creates NO order).
 //   Prints PASS/FAIL per check and exits 0 only if every check passes.
 //
-// WHAT IT CANNOT DO YET — EXPECTED FAILURE BEFORE THE MIGRATION RUNS
-//   This script CANNOT pass until migration 0001_s1_catalogue.sql has been
-//   applied in the Supabase dashboard (the test project currently has ZERO
-//   tables). Before that, every SELECT fails with 404 PGRST205
-//   ("Could not find the table ... in the schema cache") and the script
-//   exits non-zero — that is the correct signal, not a bug in the script.
-//   Apply the migration first, then re-run this script.
+// WHAT IT CANNOT DO YET — EXPECTED FAILURE BEFORE THE MIGRATIONS RUN
+//   This script CANNOT pass until migrations 0001_s1_catalogue.sql AND
+//   0003_s2_orders.sql have been applied in the Supabase dashboard (the
+//   test project currently has ZERO tables). Before that, every SELECT
+//   fails with 404 PGRST205 ("Could not find the table ... in the schema
+//   cache") and the script exits non-zero — that is the correct signal,
+//   not a bug in the script. Apply the migrations first, then re-run
+//   this script. Section 4 exits with a clear "migration 0003 has NOT
+//   been applied yet" message when the orders tables are missing, even
+//   if migration 0001 already passed.
 //
 // HOW TO RUN (from the repo root; needs Node 18+ for global fetch)
 //   # load the public anon vars (never the service_role key) into the env:
@@ -208,15 +221,76 @@ check("sample-round-a still exists unchanged (price_bdt 950) after denied UPDATE
   JSON.stringify(roundStillThere.data).slice(0, 120));
 
 // ---------------------------------------------------------------------------
+// 4. S-2 orders — no direct anon access at all (migration 0003).
+//    The orders tables have RLS enabled and NO policies: anon SELECT
+//    returns 0 rows and anon INSERT is denied. The only access path is
+//    the SECURITY DEFINER functions, probed below via /rpc/.
+//    These checks run ONLY if the orders tables exist; a 404 PGRST205
+//    means migration 0003 has not been applied yet.
+// ---------------------------------------------------------------------------
+
+const orders = await rest("GET", "orders?select=id,reference");
+if (isTableMissing(orders)) {
+  check("tables exist (orders readable)", false,
+    "404 PGRST205 — migration 0003 has NOT been applied yet; apply it in the dashboard SQL editor, then re-run this script.");
+  console.log("\nRESULT: FAIL — orders tables do not exist yet (migration 0003 not applied).");
+  process.exit(1);
+}
+check("anon SELECT orders returns 200 with 0 rows (no policies — deny-by-default)",
+  orders.status === 200 && Array.isArray(orders.data) && orders.data.length === 0,
+  `HTTP ${orders.status}, ${Array.isArray(orders.data) ? orders.data.length : "?"} rows`);
+
+const orderItems = await rest("GET", "order_items?select=id,order_id");
+check("anon SELECT order_items returns 200 with 0 rows (no policies — deny-by-default)",
+  orderItems.status === 200 && Array.isArray(orderItems.data) && orderItems.data.length === 0,
+  `HTTP ${orderItems.status}, ${Array.isArray(orderItems.data) ? orderItems.data.length : "?"} rows`);
+
+const orderEvents = await rest("GET", "order_status_events?select=id,order_id");
+check("anon SELECT order_status_events returns 200 with 0 rows (no policies — deny-by-default)",
+  orderEvents.status === 200 && Array.isArray(orderEvents.data) && orderEvents.data.length === 0,
+  `HTTP ${orderEvents.status}, ${Array.isArray(orderEvents.data) ? orderEvents.data.length : "?"} rows`);
+
+await expectDenied("anon INSERT into orders is denied", "POST", "orders",
+  { reference: "RB-2026-000000", customer_name: "RLS probe", customer_phone: "01700000000",
+    customer_email: "probe@example.com", delivery_address: "RLS probe address",
+    delivery_zone: "inside", payment_method: "cod",
+    subtotal_bdt: 1, tax_bdt: 0, delivery_fee_bdt: 60, total_bdt: 61, status: "placed" });
+await expectDenied("anon INSERT into order_items is denied", "POST", "order_items",
+  { order_id: "00000000-0000-4000-8000-000000000000",
+    product_id: "00000000-0000-4000-8000-000000000000",
+    product_slug: "rls-probe", product_name: "RLS probe",
+    unit_price_bdt: 1, quantity: 1, line_total_bdt: 1 });
+
+// SECURITY DEFINER functions: lookup of an unknown reference returns
+// null (function exists, no order found — never reveal which failed).
+const lookup = await rest("POST", "rpc/lookup_guest_order",
+  { p_reference: "RB-2026-000000", p_phone: "01700000000" });
+check("rpc lookup_guest_order returns 200 with data null for an unknown reference",
+  lookup.status === 200 && lookup.data === null,
+  `HTTP ${lookup.status}, data: ${JSON.stringify(lookup.data).slice(0, 120)}`);
+
+// create with an INVALID phone must be rejected by the function's
+// validation (4xx). Do NOT call it with valid data — that would create
+// a real order (and decrement real stock).
+const badCreate = await rest("POST", "rpc/create_guest_order",
+  { p_customer: { name: "RLS probe", phone: "bad", email: "probe@example.com",
+      address: "123 Test Street, Dhaka", zone: "inside" },
+    p_payment_method: "cod",
+    p_items: [{ slug: "sample-round-a", variant_colour: null, quantity: 1 }] });
+check("rpc create_guest_order with an invalid phone returns a 4xx error (function validates)",
+  badCreate.status >= 400 && badCreate.status < 500,
+  `HTTP ${badCreate.status}, ${JSON.stringify(badCreate.data).slice(0, 120)}`);
+
+// ---------------------------------------------------------------------------
 // Summary
 // ---------------------------------------------------------------------------
 const failed = results.filter((r) => !r.passed);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed.`);
 if (failed.length > 0) {
-  console.log("RESULT: FAIL — do NOT merge S-1 until every check passes.");
+  console.log("RESULT: FAIL — do NOT merge S-2 until every check passes.");
   process.exit(1);
 }
-console.log("RESULT: PASS — anon RLS contract holds for all 5 S-1 tables.");
+console.log("RESULT: PASS — anon RLS contract holds for all 5 S-1 tables and for orders / order_items / order_status_events (S-2, no policies — access only via SECURITY DEFINER functions).");
 console.log(
   "NOTE: this script tests the anon role only. The audit §5 also requires a " +
   "non-admin JWT denial test before merge — that needs a logged-in (non-admin) " +

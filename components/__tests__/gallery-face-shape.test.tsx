@@ -3,6 +3,7 @@ import ProductDetailClient from "@/components/product-detail-client";
 import type { ProductDetail } from "@/lib/supabase/catalog";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
+import { BagProvider } from "@/lib/bag-context";
 
 const THREE_IMAGES: ProductDetail["images"] = [
   {
@@ -64,7 +65,7 @@ function sampleProduct(
 
 describe("Gallery viewer", () => {
   it("shows arrows and a 1 / N counter with more than one photo", () => {
-    render(<ProductDetailClient product={sampleProduct(THREE_IMAGES)} />);
+    render(<BagProvider><ProductDetailClient product={sampleProduct(THREE_IMAGES)} /></BagProvider>);
 
     expect(
       screen.getByRole("button", { name: "Previous photo" }),
@@ -83,7 +84,7 @@ describe("Gallery viewer", () => {
   });
 
   it("next/previous arrows switch photos and wrap around", () => {
-    render(<ProductDetailClient product={sampleProduct(THREE_IMAGES)} />);
+    render(<BagProvider><ProductDetailClient product={sampleProduct(THREE_IMAGES)} /></BagProvider>);
 
     fireEvent.click(screen.getByRole("button", { name: "Next photo" }));
     expect(screen.getByText("2 / 3")).toBeInTheDocument();
@@ -106,7 +107,7 @@ describe("Gallery viewer", () => {
   });
 
   it("Left/Right arrow keys navigate the gallery", () => {
-    render(<ProductDetailClient product={sampleProduct(THREE_IMAGES)} />);
+    render(<BagProvider><ProductDetailClient product={sampleProduct(THREE_IMAGES)} /></BagProvider>);
 
     const gallery = screen.getByTestId("product-gallery");
     fireEvent.keyDown(gallery, { key: "ArrowRight" });
@@ -117,7 +118,7 @@ describe("Gallery viewer", () => {
   });
 
   it("thumbnails still switch photos", () => {
-    render(<ProductDetailClient product={sampleProduct(THREE_IMAGES)} />);
+    render(<BagProvider><ProductDetailClient product={sampleProduct(THREE_IMAGES)} /></BagProvider>);
 
     fireEvent.click(screen.getByRole("button", { name: "View photo 3" }));
     expect(screen.getByText("3 / 3")).toBeInTheDocument();
@@ -129,7 +130,7 @@ describe("Gallery viewer", () => {
   });
 
   it("the lightbox shows the currently selected photo", () => {
-    render(<ProductDetailClient product={sampleProduct(THREE_IMAGES)} />);
+    render(<BagProvider><ProductDetailClient product={sampleProduct(THREE_IMAGES)} /></BagProvider>);
 
     fireEvent.click(screen.getByRole("button", { name: "Next photo" }));
     fireEvent.click(
@@ -144,7 +145,9 @@ describe("Gallery viewer", () => {
 
   it("shows no arrows or counter with a single photo", () => {
     render(
-      <ProductDetailClient product={sampleProduct(THREE_IMAGES.slice(0, 1))} />,
+      <BagProvider>
+        <ProductDetailClient product={sampleProduct(THREE_IMAGES.slice(0, 1))} />
+      </BagProvider>,
     );
 
     expect(
@@ -157,7 +160,7 @@ describe("Gallery viewer", () => {
   });
 
   it("shows no arrows or counter with no photos", () => {
-    render(<ProductDetailClient product={sampleProduct([])} />);
+    render(<BagProvider><ProductDetailClient product={sampleProduct([])} /></BagProvider>);
 
     expect(
       screen.queryByRole("button", { name: "Previous photo" }),
@@ -174,7 +177,9 @@ describe("Gallery viewer", () => {
 describe("Face-shape icons", () => {
   it("renders one icon per shape in the data, and no Oblong chip", () => {
     const { container } = render(
-      <ProductDetailClient product={sampleProduct(THREE_IMAGES)} />,
+      <BagProvider>
+        <ProductDetailClient product={sampleProduct(THREE_IMAGES)} />
+      </BagProvider>,
     );
 
     // Four chips (Round, Square, Oval, Heart) -> four face icons
@@ -191,7 +196,9 @@ describe("Face-shape icons", () => {
 
   it("pulses the best-fit (Excellent) icons only", () => {
     const { container } = render(
-      <ProductDetailClient product={sampleProduct(THREE_IMAGES)} />,
+      <BagProvider>
+        <ProductDetailClient product={sampleProduct(THREE_IMAGES)} />
+      </BagProvider>,
     );
 
     // Square and Oval are "excellent" in the mock data; Round and Heart
