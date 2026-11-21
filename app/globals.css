@@ -83,3 +83,41 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/*
+ * Face-shape icons (components/face-shape-icon.tsx) — gentle draw-in
+ * on mount, and a soft pulse on the best-fit ("Excellent") icon.
+ * The draw-in keyframe only sets the starting offset; the base state
+ * is fully drawn, so the icon is visible even if animations never run.
+ * The prefers-reduced-motion rule above collapses both animations to
+ * their end state instantly — reduced-motion users see the icons at rest.
+ */
+@keyframes face-shape-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes face-shape-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.08);
+  }
+}
+
+.face-shape-draw {
+  stroke-dasharray: 1;
+  animation: face-shape-draw 0.9s ease-out forwards;
+}
+
+.face-shape-best {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: face-shape-pulse 2.4s ease-in-out 1s infinite;
+}

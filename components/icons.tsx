@@ -103,3 +103,21 @@ export function CloseIcon({ className }: IconProps) {
     </Svg>
   );
 }
+
+/** Chevron left — gallery previous photo. */
+export function ChevronLeftIcon({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <polyline points="15 18 9 12 15 6" />
+    </Svg>
+  );
+}
+
+/** Chevron right — gallery next photo. */
+export function ChevronRightIcon({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <polyline points="9 18 15 12 9 6" />
+    </Svg>
+  );
+}

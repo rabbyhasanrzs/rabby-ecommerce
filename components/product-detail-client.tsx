@@ -1,5 +1,7 @@
 "use client";
 
+import FaceShapeIcon from "@/components/face-shape-icon";
+import { ChevronLeftIcon, ChevronRightIcon } from "@/components/icons";
 import MeasurementDiagram from "@/components/measurement-diagram";
 import ProductImage from "@/components/product-image";
 import { formatPriceBdt, stockLabel } from "@/lib/format";
@@ -13,10 +15,19 @@ import { useState } from "react";
  * Product detail (interactive part) — gallery + colour variants.
  *
  * Gallery: primary image large, thumbnails below; selecting a thumbnail
- * swaps the large image. The main photo is zoomable: hovering magnifies
- * it at the cursor, clicking opens a fullscreen lightbox. Photos live at
- * /images/<file>; a missing file renders the "Photo coming soon"
- * placeholder, never a broken icon — and with no photo there is no zoom.
+ * swaps the large image. With more than one photo there are also
+ * prev/next arrows, a "1 / N" counter, and Left/Right keyboard
+ * navigation (the gallery region is focusable); navigation wraps around
+ * from the last photo to the first. The main photo is zoomable: hovering
+ * magnifies it at the cursor, clicking opens a fullscreen lightbox that
+ * shows the currently selected photo. Photos live at /images/<file>; a
+ * missing file renders the "Photo coming soon" placeholder, never a
+ * broken icon — and with no photo there is no zoom, arrows, or counter.
+ *
+ * Face shapes: one animated outline icon per shape in the data
+ * (components/face-shape-icon.tsx); the best ("Excellent") rating
+ * pulses softly. Only shapes present in measurements.face_shape_ratings
+ * are shown — no rating is ever invented for a shape.
  *
  * Variants: colour swatches. Selecting a variant updates the variant
  * name and the price/stock line. Demo data has NO per-variant price or
@@ -47,19 +58,76 @@ export default function ProductDetailClient({
   const outOfStock = product.stock_total <= 0;
   const variant = product.variants[selectedVariant] ?? null;
   const images = product.images;
+  const imageCount = images.length;
   const currentImage = images[selectedImage] ?? images[0] ?? null;
   const measurements = product.measurements;
+
+  /** Gallery navigation with wrap-around (last -> first, first -> last). */
+  const showPhoto = (index: number) => {
+    if (imageCount === 0) {
+      return;
+    }
+    setSelectedImage(((index % imageCount) + imageCount) % imageCount);
+  };
+
+  const handleGalleryKeyDown = (event: React.KeyboardEvent) => {
+    if (imageCount <= 1) {
+      return;
+    }
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      showPhoto(selectedImage - 1);
+    } else if (event.key === "ArrowRight") {
+      event.preventDefault();
+      showPhoto(selectedImage + 1);
+    }
+  };
 
   return (
     <div className="grid gap-10 md:grid-cols-2">
       {/* Gallery */}
       <div>
-        <ProductImage
-          src={currentImage?.storage_path ?? null}
-          alt={currentImage?.alt_text ?? product.name}
-          zoomable
-          className="aspect-[4/3] w-full rounded-lg border border-border object-cover"
-        />
+        <div
+          data-testid="product-gallery"
+          role="group"
+          aria-label="Product photos"
+          tabIndex={imageCount > 1 ? 0 : undefined}
+          onKeyDown={handleGalleryKeyDown}
+          className="relative"
+        >
+          <ProductImage
+            src={currentImage?.storage_path ?? null}
+            alt={currentImage?.alt_text ?? product.name}
+            zoomable
+            className="aspect-[4/3] w-full rounded-lg border border-border object-cover"
+          />
+          {imageCount > 1 ? (
+            <>
+              <button
+                type="button"
+                onClick={() => showPhoto(selectedImage - 1)}
+                aria-label="Previous photo"
+                className="absolute left-3 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-surface text-text shadow-sm hover:border-action"
+              >
+                <ChevronLeftIcon className="h-5 w-5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => showPhoto(selectedImage + 1)}
+                aria-label="Next photo"
+                className="absolute right-3 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-surface text-text shadow-sm hover:border-action"
+              >
+                <ChevronRightIcon className="h-5 w-5" />
+              </button>
+              <p
+                aria-live="polite"
+                className="absolute bottom-3 left-3 rounded-full border border-border bg-surface px-3 py-1.5 text-sm font-semibold text-text shadow-sm"
+              >
+                {selectedImage + 1} / {imageCount}
+              </p>
+            </>
+          ) : null}
+        </div>
         {images.length > 1 ? (
           <ul className="mt-4 flex flex-wrap gap-3" aria-label="Product photos">
             {images.map((image, index) => (
@@ -190,9 +258,16 @@ export default function ProductDetailClient({
                 ([shape, rating]) => (
                   <li
                     key={shape}
-                    className="rounded-full border border-border bg-surface px-3 py-1.5 text-sm text-text"
+                    className="flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1.5 text-sm text-text"
                   >
-                    {shape}: {faceShapeChipLabel(rating)}
+                    <FaceShapeIcon
+                      shape={shape}
+                      highlight={rating.toLowerCase() === "excellent"}
+                      className="h-5 w-5 text-action"
+                    />
+                    <span>
+                      {shape}: {faceShapeChipLabel(rating)}
+                    </span>
                   </li>
                 ),
               )}
