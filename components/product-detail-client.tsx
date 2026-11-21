@@ -1,5 +1,6 @@
 "use client";
 
+import MeasurementDiagram from "@/components/measurement-diagram";
 import ProductImage from "@/components/product-image";
 import { formatPriceBdt, stockLabel } from "@/lib/format";
 import {
@@ -150,6 +151,9 @@ export default function ProductDetailClient({
         {measurements ? (
           <div className="mt-8">
             <h2 className="text-lg font-semibold text-text">Measurements</h2>
+            <div className="mt-3">
+              <MeasurementDiagram measurements={measurements} />
+            </div>
             <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
               {MEASUREMENT_LABELS.map(({ key, label }) => {
                 const value = measurements[key];
