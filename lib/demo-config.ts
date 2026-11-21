@@ -40,7 +40,10 @@ export interface PaymentMethod {
 
 /**
  * Payment is a SELECTION ONLY in S-2 — no money moves, no gateway.
- * The gateway + verification/webhook are S-3.
+ * S-3 (demo-safe, D-1): COD works fully; mobile banking is a manual
+ * flow — the customer pays first, then enters the Transaction ID +
+ * sender number; card details are NEVER collected, card payment is
+ * confirmed after the order. No gateway, no real money moves in S-3.
  */
 export const PAYMENT_METHODS: PaymentMethod[] = [
   {
@@ -49,13 +52,28 @@ export const PAYMENT_METHODS: PaymentMethod[] = [
     label: "Cash on Delivery",
     note: "Pay in cash when your order arrives.",
   },
-  { id: "bkash", group: "Mobile Banking", label: "bKash", note: "" },
-  { id: "nagad", group: "Mobile Banking", label: "Nagad", note: "" },
-  { id: "rocket", group: "Mobile Banking", label: "Rocket", note: "" },
+  {
+    id: "bkash",
+    group: "Mobile Banking",
+    label: "bKash",
+    note: "Send money first, then enter your Transaction ID and sender number.",
+  },
+  {
+    id: "nagad",
+    group: "Mobile Banking",
+    label: "Nagad",
+    note: "Send money first, then enter your Transaction ID and sender number.",
+  },
+  {
+    id: "rocket",
+    group: "Mobile Banking",
+    label: "Rocket",
+    note: "Send money first, then enter your Transaction ID and sender number.",
+  },
   {
     id: "card",
     group: "Card",
     label: "Debit / Credit Card",
-    note: "Card payment is confirmed after you place the order — no money moves in S-2.",
+    note: "Card payment is confirmed after you place the order — no money moves in S-3.",
   },
 ];

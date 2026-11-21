@@ -41,6 +41,18 @@ export interface OrderDetail {
   deliveryAddress: string;
   deliveryZone: DeliveryZone;
   paymentMethod: PaymentMethodId;
+  /**
+   * S-3 payment state. Optional (not required) so order fixtures
+   * written before S-3 still typecheck: lookupOrder always populates
+   * them (falling back to a method-derived status when the database
+   * predates migration 0004), and the pages render through
+   * paymentStatusLabel below, which treats a missing status the same
+   * way. paymentSender is carried for the server/API layer only —
+   * the pages never render it (TrxID only).
+   */
+  paymentStatus?: string;
+  paymentReference?: string | null;
+  paymentSender?: string | null;
   subtotalBdt: number;
   taxBdt: number;
   deliveryFeeBdt: number;
@@ -48,6 +60,41 @@ export interface OrderDetail {
   createdAt: string;
   items: OrderItemDetail[];
   events: OrderStatusEvent[];
+}
+
+/**
+ * Plain-words payment status for the confirmation + track-order
+ * pages (S-3). A missing status (pre-0004 row) is derived from the
+ * method: COD orders pay on delivery, everything else is pending
+ * verification.
+ */
+export function paymentStatusLabel(
+  paymentStatus: string | undefined,
+  paymentMethod: string,
+): string {
+  const status =
+    paymentStatus ?? (paymentMethod === "cod" ? "cod" : "pending");
+  switch (status) {
+    case "cod":
+      return "Cash on Delivery — pay when your order arrives";
+    case "pending":
+      return "Payment pending verification";
+    case "paid":
+      return "Paid";
+    case "failed":
+      return "Payment failed";
+    default:
+      return "Payment pending verification";
+  }
+}
+
+/** True for the mobile-banking methods (TrxID + sender number). */
+export function isMobileBankingMethod(paymentMethod: string): boolean {
+  return (
+    paymentMethod === "bkash" ||
+    paymentMethod === "nagad" ||
+    paymentMethod === "rocket"
+  );
 }
 
 /** The 7-step order workflow (Gap Resolution, approved 2026-11-17). */
@@ -309,7 +356,7 @@ export interface CreateGuestOrderInput {
   items: { slug: string; variantColour: string | null; quantity: number }[];
 }
 
-/** Create the order transactionally via create_guest_order (migration 0003). */
+/** Create the order transactionally via create_guest_order (migration 0004, 5 arguments). */
 export async function createGuestOrder(
   input: CreateGuestOrderInput,
 ): Promise<{ reference: string; totalBdt: number }> {
@@ -324,6 +371,13 @@ export async function createGuestOrder(
       zone: input.customer.zone,
     },
     p_payment_method: input.customer.paymentMethod,
+    // S-3: mobile-banking TrxID + sender number (null for COD/card).
+    // The SQL function ignores them for COD/card and validates them
+    // for bkash/nagad/rocket; 'invalid_payment_reference' /
+    // 'invalid_payment_sender' map to VALIDATION via mapCreateOrderError
+    // (they start with "invalid_").
+    p_payment_reference: input.customer.paymentReference ?? null,
+    p_payment_sender: input.customer.paymentSender ?? null,
     p_items: input.items.map((item) => ({
       slug: item.slug,
       variant_colour: item.variantColour,
@@ -358,6 +412,11 @@ interface LookupOrderRow {
   delivery_address: string;
   delivery_zone: string;
   payment_method: string;
+  /** S-3 (migration 0004). Absent on rows returned by the pre-0004
+   *  lookup function — the mapping below falls back accordingly. */
+  payment_status?: string;
+  payment_reference?: string | null;
+  payment_sender?: string | null;
   subtotal_bdt: number;
   tax_bdt: number;
   delivery_fee_bdt: number;
@@ -406,6 +465,11 @@ export async function lookupOrder(
     deliveryAddress: row.delivery_address,
     deliveryZone: row.delivery_zone as DeliveryZone,
     paymentMethod: row.payment_method as PaymentMethodId,
+    paymentStatus:
+      row.payment_status ??
+      (row.payment_method === "cod" ? "cod" : "pending"),
+    paymentReference: row.payment_reference ?? null,
+    paymentSender: row.payment_sender ?? null,
     subtotalBdt: row.subtotal_bdt,
     taxBdt: row.tax_bdt,
     deliveryFeeBdt: row.delivery_fee_bdt,
@@ -450,4 +514,48 @@ export async function cancelOrder(
     return { ok: false, error: "too_late" };
   }
   return { ok: false, error: "not_found" };
+}
+
+// ---------------------------------------------------------------------------
+// Payment status (S-3, Slice B's webhook calls this)
+// ---------------------------------------------------------------------------
+
+/**
+ * Mark an order's payment status via mark_order_payment_status
+ * (migration 0004). Only a 'pending' payment can move — a COD order
+ * or one already 'paid' / 'failed' returns invalid_transition.
+ * Imported by the webhook route (Slice B); the checkout flow never
+ * calls it.
+ */
+export async function markOrderPaymentStatus(
+  reference: string,
+  status: "paid" | "failed",
+): Promise<{
+  ok: boolean;
+  error?: "not_found" | "invalid_status" | "invalid_transition";
+}> {
+  const supabase = requireClient();
+
+  const { data, error } = await supabase.rpc("mark_order_payment_status", {
+    p_reference: reference,
+    p_status: status,
+  });
+  if (error) {
+    throw new Error("Payment status update failed. Please try again.");
+  }
+
+  const result = (data ?? {}) as { ok?: unknown; error?: unknown };
+  if (result.ok === true) {
+    return { ok: true };
+  }
+  if (result.error === "not_found") {
+    return { ok: false, error: "not_found" };
+  }
+  if (result.error === "invalid_status") {
+    return { ok: false, error: "invalid_status" };
+  }
+  if (result.error === "invalid_transition") {
+    return { ok: false, error: "invalid_transition" };
+  }
+  throw new Error("Payment status update failed. Please try again.");
 }

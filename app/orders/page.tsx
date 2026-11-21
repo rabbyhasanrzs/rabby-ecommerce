@@ -8,6 +8,8 @@ import {
 import { formatPriceBdt } from "@/lib/format";
 import {
   isCancellableStatus,
+  isMobileBankingMethod,
+  paymentStatusLabel,
   type OrderDetail,
 } from "@/lib/supabase/orders";
 import { useSearchParams } from "next/navigation";
@@ -221,6 +223,22 @@ function TrackOrderContent() {
                   {paymentLabel(order.paymentMethod)}
                 </dd>
               </div>
+              <div className="flex justify-between gap-4">
+                <dt className="font-semibold">Payment status</dt>
+                <dd className="text-right">
+                  {paymentStatusLabel(
+                    order.paymentStatus,
+                    order.paymentMethod,
+                  )}
+                </dd>
+              </div>
+              {isMobileBankingMethod(order.paymentMethod) &&
+              order.paymentReference ? (
+                <div className="flex justify-between gap-4">
+                  <dt className="font-semibold">Transaction ID</dt>
+                  <dd className="text-right">{order.paymentReference}</dd>
+                </div>
+              ) : null}
               <div className="flex justify-between gap-4">
                 <dt className="font-semibold">Placed on</dt>
                 <dd className="text-right">

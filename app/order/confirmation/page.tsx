@@ -5,7 +5,11 @@ import {
   PAYMENT_METHODS,
 } from "@/lib/demo-config";
 import { formatPriceBdt } from "@/lib/format";
-import type { OrderDetail } from "@/lib/supabase/orders";
+import {
+  isMobileBankingMethod,
+  paymentStatusLabel,
+  type OrderDetail,
+} from "@/lib/supabase/orders";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
@@ -296,6 +300,22 @@ function ConfirmationContent() {
                   {paymentLabel(order.paymentMethod)}
                 </dd>
               </div>
+              <div className="flex justify-between gap-4">
+                <dt className="font-semibold">Payment status</dt>
+                <dd className="text-right">
+                  {paymentStatusLabel(
+                    order.paymentStatus,
+                    order.paymentMethod,
+                  )}
+                </dd>
+              </div>
+              {isMobileBankingMethod(order.paymentMethod) &&
+              order.paymentReference ? (
+                <div className="flex justify-between gap-4">
+                  <dt className="font-semibold">Transaction ID</dt>
+                  <dd className="text-right">{order.paymentReference}</dd>
+                </div>
+              ) : null}
             </dl>
           </section>
 
