@@ -1,4 +1,5 @@
 import CheckoutForm from "@/components/checkout-form";
+import { checkoutRequestSchema } from "@/lib/api-schemas";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -147,7 +148,12 @@ describe("CheckoutForm", () => {
     );
     expect(checkoutBody.customer.phone).toBe("01712345678");
     expect(checkoutBody.customer.zone).toBe("inside");
-    expect(checkoutBody.paymentMethod).toBe("cod");
+    // Regression: paymentMethod must live INSIDE customer (checkoutRequestSchema),
+    // never at the top level — a top-level value made the API reject the order
+    // with "Invalid option: expected one of cod|bkash|nagad|rocket|card".
+    expect(checkoutBody.customer.paymentMethod).toBe("cod");
+    expect(checkoutBody).not.toHaveProperty("paymentMethod");
+    expect(checkoutRequestSchema.safeParse(checkoutBody).success).toBe(true);
     expect(checkoutBody.items).toEqual([
       { slug: "sample-round-a", variantColour: "Black", quantity: 2 },
       { slug: "sample-aviator-a", variantColour: null, quantity: 1 },

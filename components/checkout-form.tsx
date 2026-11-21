@@ -166,8 +166,8 @@ export default function CheckoutForm() {
             email: data.email,
             address: data.address,
             zone: data.zone,
+            paymentMethod: data.paymentMethod,
           },
-          paymentMethod: data.paymentMethod,
           items: items.map((item: BagItem) => ({
             slug: item.slug,
             variantColour: item.variantColour,
