@@ -1,4 +1,5 @@
-import { BagIcon, SearchIcon } from "@/components/icons";
+import BagLink from "@/components/bag-link";
+import { SearchIcon } from "@/components/icons";
 import Link from "next/link";
 
 const NAV_LINKS = [
@@ -12,7 +13,8 @@ const NAV_LINKS = [
  * Site header — Final Approved Design Blueprint, Sections 6.2 and 7.1.
  * Sticky header: wordmark, nav, search, Track Order, Bag.
  * Search submits to /sunglasses (S-1 product search, FR-02).
- * The bag count is a static placeholder (0) until the cart lands in S-2.
+ * The bag count is live (components/bag-link.tsx, S-2) — it reads the
+ * bag from context and shows the real item count.
  * Wordmark "RabbY" (owner decision 2026-11-18), Playfair Display.
  */
 export default function SiteHeader() {
@@ -74,20 +76,7 @@ export default function SiteHeader() {
             Track Order
           </Link>
 
-          <Link
-            href="/bag"
-            className="flex shrink-0 items-center gap-1.5 text-base text-text hover:text-action"
-            aria-label="Bag, 0 items (placeholder)"
-          >
-            <BagIcon className="h-5 w-5 shrink-0" />
-            Bag
-            <span
-              aria-hidden="true"
-              className="flex h-6 min-w-6 items-center justify-center rounded-full bg-action px-1.5 text-sm font-semibold text-text-inverse"
-            >
-              0
-            </span>
-          </Link>
+          <BagLink />
 
           <details className="relative md:hidden">
             <summary className="cursor-pointer list-none rounded-md border border-border px-3 py-2 text-base text-text">

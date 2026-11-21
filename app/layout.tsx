@@ -1,5 +1,7 @@
+import MiniCartDrawer from "@/components/mini-cart-drawer";
 import SiteFooter from "@/components/site-footer";
 import SiteHeader from "@/components/site-header";
+import { BagProvider } from "@/lib/bag-context";
 import type { Metadata } from "next";
 import { Inter, Playfair_Display } from "next/font/google";
 import "./globals.css";
@@ -36,9 +38,12 @@ export default function RootLayout({
       className={`${inter.variable} ${playfair.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col">
-        <SiteHeader />
-        <div className="flex flex-1 flex-col">{children}</div>
-        <SiteFooter />
+        <BagProvider>
+          <SiteHeader />
+          <div className="flex flex-1 flex-col">{children}</div>
+          <SiteFooter />
+          <MiniCartDrawer />
+        </BagProvider>
       </body>
     </html>
   );

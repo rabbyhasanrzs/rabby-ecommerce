@@ -6,6 +6,7 @@ import type {
 } from "@/lib/supabase/catalog";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
+import { BagProvider } from "@/lib/bag-context";
 
 /** Seeded values for sample-round-a (supabase/migrations/0001_s1_catalogue.sql). */
 function roundAMeasurements(): ProductMeasurements {
@@ -84,7 +85,7 @@ describe("MeasurementDiagram", () => {
 
 describe("ProductDetailClient measurements", () => {
   it("shows the diagram above the text list when measurements exist", () => {
-    render(<ProductDetailClient product={sampleProduct(roundAMeasurements())} />);
+    render(<BagProvider><ProductDetailClient product={sampleProduct(roundAMeasurements())} /></BagProvider>);
 
     expect(
       screen.getByRole("img", { name: /frame width 126 mm/i }),
@@ -96,7 +97,7 @@ describe("ProductDetailClient measurements", () => {
   });
 
   it("hides the diagram and the measurements section when measurements are null", () => {
-    render(<ProductDetailClient product={sampleProduct(null)} />);
+    render(<BagProvider><ProductDetailClient product={sampleProduct(null)} /></BagProvider>);
 
     expect(
       screen.queryByRole("img", { name: /measurement diagram/i }),

@@ -5,6 +5,7 @@ import TrustStrip from "@/components/trust-strip";
 import type { ProductDetail } from "@/lib/supabase/catalog";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
+import { BagProvider } from "@/lib/bag-context";
 
 function sampleProduct(images: ProductDetail["images"]): ProductDetail {
   return {
@@ -28,7 +29,7 @@ function sampleProduct(images: ProductDetail["images"]): ProductDetail {
 
 describe("Icons", () => {
   it("header shows search and bag icons", () => {
-    const { container } = render(<SiteHeader />);
+    const { container } = render(<BagProvider><SiteHeader /></BagProvider>);
 
     // Exactly two decorative SVGs: search (in the input) and bag.
     expect(container.querySelectorAll("svg")).toHaveLength(2);
@@ -159,17 +160,19 @@ describe("ProductImage zoom", () => {
 describe("ProductDetailClient zoom", () => {
   it("main photo is zoomable when the product has a photo", () => {
     render(
-      <ProductDetailClient
-        product={sampleProduct([
-          {
-            id: "img-1",
-            storage_path: "/images/sample-round-a.webp",
-            alt_text: "SAMPLE Round A",
-            sort_order: 0,
-            is_primary: true,
-          },
-        ])}
-      />,
+      <BagProvider>
+        <ProductDetailClient
+          product={sampleProduct([
+            {
+              id: "img-1",
+              storage_path: "/images/sample-round-a.webp",
+              alt_text: "SAMPLE Round A",
+              sort_order: 0,
+              is_primary: true,
+            },
+          ])}
+        />
+      </BagProvider>,
     );
 
     expect(screen.getByTestId("photo-zoom")).toBeInTheDocument();
@@ -179,7 +182,7 @@ describe("ProductDetailClient zoom", () => {
   });
 
   it("main photo has no zoom when the product has no photos", () => {
-    render(<ProductDetailClient product={sampleProduct([])} />);
+    render(<BagProvider><ProductDetailClient product={sampleProduct([])} /></BagProvider>);
 
     expect(screen.getByText("Photo coming soon")).toBeInTheDocument();
     expect(screen.queryByTestId("photo-zoom")).not.toBeInTheDocument();
