@@ -10,9 +10,12 @@ const GENERIC_ERROR = "Something went wrong. Please try again.";
 /**
  * POST /api/checkout — create a guest order. The server re-prices every
  * line from the products table and decrements stock in one transaction
- * (migration 0003, create_guest_order); client-sent prices are never
- * trusted. Payment here is a SELECTION ONLY — no money moves (S-3
- * adds the gateway).
+ * (migration 0004, create_guest_order); client-sent prices are never
+ * trusted. Payment is DEMO-SAFE (S-3, owner decision D-1): COD works
+ * fully; mobile banking takes a TrxID + sender number for manual
+ * verification; card details are NEVER collected. No gateway, no real
+ * money moves in S-3 — the payment status on the order is 'cod' for
+ * COD and 'pending' otherwise, until Slice B's webhook marks it.
  *
  * 200 { ok: true, reference, totalBdt } on success.
  * 400 invalid JSON / schema / customer validation failure.

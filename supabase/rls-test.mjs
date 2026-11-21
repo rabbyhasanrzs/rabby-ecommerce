@@ -1,10 +1,10 @@
 // ============================================================================
-// Rabby e-commerce — S-1 + S-2 RLS test (anon key only, read + denied-write probes)
+// Rabby e-commerce — S-1 + S-2 + S-3 RLS test (anon key only, read + denied-write probes)
 // File: supabase/rls-test.mjs
 //
 // WHAT IT DOES
 //   Probes the Supabase PostgREST endpoints with the ANON key and checks the
-//   deny-by-default RLS contract from audit §5 / migrations 0001 + 0003:
+//   deny-by-default RLS contract from audit §5 / migrations 0001 + 0003 + 0004:
 //   S-1:
 //     * anon SELECT returns rows ONLY for public rows
 //       (categories is_active=true, products status='active', and the
@@ -20,18 +20,29 @@
 //     * the SECURITY DEFINER functions exist and behave: lookup returns
 //       null for an unknown reference, and create rejects invalid input
 //       (the invalid-input probe creates NO order).
+//   S-3:
+//     * anon SELECT on payments returns 0 rows and anon INSERT /
+//       UPDATE / DELETE on payments is DENIED — payments has RLS
+//       enabled and NO policies, same as the orders tables.
+//     * the SECURITY DEFINER mark_order_payment_status function returns
+//       not_found for an unknown reference, and create_guest_order
+//       rejects a mobile-banking order with an invalid TrxID (the
+//       invalid-input probes create NO order).
 //   Prints PASS/FAIL per check and exits 0 only if every check passes.
 //
 // WHAT IT CANNOT DO YET — EXPECTED FAILURE BEFORE THE MIGRATIONS RUN
-//   This script CANNOT pass until migrations 0001_s1_catalogue.sql AND
-//   0003_s2_orders.sql have been applied in the Supabase dashboard (the
-//   test project currently has ZERO tables). Before that, every SELECT
-//   fails with 404 PGRST205 ("Could not find the table ... in the schema
-//   cache") and the script exits non-zero — that is the correct signal,
-//   not a bug in the script. Apply the migrations first, then re-run
-//   this script. Section 4 exits with a clear "migration 0003 has NOT
-//   been applied yet" message when the orders tables are missing, even
-//   if migration 0001 already passed.
+//   This script CANNOT pass until migrations 0001_s1_catalogue.sql,
+//   0003_s2_orders.sql AND 0004_s3_payment.sql have been applied in the
+//   Supabase dashboard (the test project currently has ZERO tables).
+//   Before that, every SELECT fails with 404 PGRST205 ("Could not find
+//   the table ... in the schema cache") and the script exits non-zero —
+//   that is the correct signal, not a bug in the script. Apply the
+//   migrations first, then re-run this script. Section 4 exits with a
+//   clear "migration 0003 has NOT been applied yet" message when the
+//   orders tables are missing, even if migration 0001 already passed;
+//   Section 5 records its 7 checks as blocked (not a crash) when the
+//   payments table is missing, i.e. migration 0004 has not been applied
+//   yet.
 //
 // HOW TO RUN (from the repo root; needs Node 18+ for global fetch)
 //   # load the public anon vars (never the service_role key) into the env:
@@ -272,25 +283,105 @@ check("rpc lookup_guest_order returns 200 with data null for an unknown referenc
 // create with an INVALID phone must be rejected by the function's
 // validation (4xx). Do NOT call it with valid data — that would create
 // a real order (and decrement real stock).
+// S-3: migration 0004 dropped the 3-argument create_guest_order and
+// replaced it with the 5-argument version — the probe passes
+// p_payment_reference / p_payment_sender (null for COD) or PostgREST
+// would 404 on the missing function and the check would pass for the
+// wrong reason.
 const badCreate = await rest("POST", "rpc/create_guest_order",
   { p_customer: { name: "RLS probe", phone: "bad", email: "probe@example.com",
       address: "123 Test Street, Dhaka", zone: "inside" },
     p_payment_method: "cod",
+    p_payment_reference: null,
+    p_payment_sender: null,
     p_items: [{ slug: "sample-round-a", variant_colour: null, quantity: 1 }] });
 check("rpc create_guest_order with an invalid phone returns a 4xx error (function validates)",
   badCreate.status >= 400 && badCreate.status < 500,
   `HTTP ${badCreate.status}, ${JSON.stringify(badCreate.data).slice(0, 120)}`);
 
 // ---------------------------------------------------------------------------
-// Summary
+// 5. S-3 payments — no direct anon access at all (migration 0004).
+//    The payments table has RLS enabled and NO policies: anon SELECT
+//    returns 0 rows and anon INSERT / UPDATE / DELETE is denied.
+//    Payment status changes go ONLY through the SECURITY DEFINER
+//    mark_order_payment_status function, probed below via /rpc/.
+//    These checks run ONLY if the payments table exists; a 404
+//    PGRST205 means migration 0004 has not been applied yet — the
+//    checks are then recorded as blocked (not a crash) and the script
+//    exits non-zero with a clear message.
+// ---------------------------------------------------------------------------
+
+const payments = await rest("GET", "payments?select=id,order_id");
+if (isTableMissing(payments)) {
+  const blocked = "blocked — migration 0004 has NOT been applied yet; apply it in the dashboard SQL editor, then re-run this script.";
+  check("anon SELECT payments returns 200 with 0 rows (no policies — deny-by-default)", false, blocked);
+  check("anon INSERT into payments is denied", false, blocked);
+  check("anon UPDATE on payments is denied", false, blocked);
+  check("anon DELETE on payments is denied", false, blocked);
+  check("payments still has 0 rows after denied writes", false, blocked);
+  check("rpc mark_order_payment_status returns not_found for an unknown reference", false, blocked);
+  check("rpc create_guest_order with bkash + an invalid TrxID returns a 4xx error (function validates payment details)", false, blocked);
+  const failedSoFar = results.filter((r) => !r.passed);
+  console.log(`\n${results.length - failedSoFar.length}/${results.length} checks passed.`);
+  console.log("RESULT: FAIL — migration 0004 has NOT been applied yet (Section 5 blocked). Sections 1–4 passed; apply migration 0004, then re-run.");
+  process.exit(1);
+}
+check("anon SELECT payments returns 200 with 0 rows (no policies — deny-by-default)",
+  payments.status === 200 && Array.isArray(payments.data) && payments.data.length === 0,
+  `HTTP ${payments.status}, ${Array.isArray(payments.data) ? payments.data.length : "?"} rows`);
+
+await expectDenied("anon INSERT into payments is denied", "POST", "payments",
+  { order_id: "00000000-0000-4000-8000-000000000000", method: "bkash",
+    reference: "RLSPROBE1", sender_number: "01700000000",
+    amount_bdt: 1, status: "pending" });
+
+// No seeded payments rows exist, so UPDATE/DELETE target a filter that
+// matches nothing: with no policies the operation returns 200 with 0
+// rows changed (same PostgREST + RLS semantics as Section 2).
+await expectDeniedWrite("anon UPDATE on payments is denied", "PATCH",
+  "payments?order_id=eq.00000000-0000-4000-8000-000000000000", { status: "paid" });
+await expectDeniedWrite("anon DELETE on payments is denied", "DELETE",
+  "payments?order_id=eq.00000000-0000-4000-8000-000000000000");
+
+// Sanity: the denied writes really did not land.
+const paymentsAfter = await rest("GET", "payments?select=id");
+check("payments still has 0 rows after denied writes",
+  paymentsAfter.status === 200 && Array.isArray(paymentsAfter.data) && paymentsAfter.data.length === 0,
+  `HTTP ${paymentsAfter.status}, ${Array.isArray(paymentsAfter.data) ? paymentsAfter.data.length : "?"} rows`);
+
+// SECURITY DEFINER function: unknown reference -> not_found (the
+// function exists and validates; no order state changes).
+const markUnknown = await rest("POST", "rpc/mark_order_payment_status",
+  { p_reference: "RB-2026-000000", p_status: "paid" });
+check("rpc mark_order_payment_status returns not_found for an unknown reference",
+  markUnknown.status === 200 && markUnknown.data &&
+  markUnknown.data.ok === false && markUnknown.data.error === "not_found",
+  `HTTP ${markUnknown.status}, data: ${JSON.stringify(markUnknown.data).slice(0, 120)}`);
+
+// create with bkash + an INVALID TrxID must be rejected by the
+// function's payment validation (4xx). Do NOT call it with valid
+// data — that would create a real order (and decrement real stock).
+const badTrx = await rest("POST", "rpc/create_guest_order",
+  { p_customer: { name: "RLS probe", phone: "01700000000", email: "probe@example.com",
+      address: "123 Test Street, Dhaka", zone: "inside" },
+    p_payment_method: "bkash",
+    p_payment_reference: "BAD",
+    p_payment_sender: "01700000000",
+    p_items: [{ slug: "sample-round-a", variant_colour: null, quantity: 1 }] });
+check("rpc create_guest_order with bkash + an invalid TrxID returns a 4xx error (function validates payment details)",
+  badTrx.status >= 400 && badTrx.status < 500,
+  `HTTP ${badTrx.status}, ${JSON.stringify(badTrx.data).slice(0, 120)}`);
+
+// ---------------------------------------------------------------------------
+// Summary — 38 checks expected (24 S-1 + 7 S-2 + 7 S-3).
 // ---------------------------------------------------------------------------
 const failed = results.filter((r) => !r.passed);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed.`);
 if (failed.length > 0) {
-  console.log("RESULT: FAIL — do NOT merge S-2 until every check passes.");
+  console.log("RESULT: FAIL — do NOT merge S-3 until every check passes.");
   process.exit(1);
 }
-console.log("RESULT: PASS — anon RLS contract holds for all 5 S-1 tables and for orders / order_items / order_status_events (S-2, no policies — access only via SECURITY DEFINER functions).");
+console.log("RESULT: PASS — anon RLS contract holds for all 5 S-1 tables, for orders / order_items / order_status_events (S-2, no policies) and for payments (S-3, no policies — access only via SECURITY DEFINER functions).");
 console.log(
   "NOTE: this script tests the anon role only. The audit §5 also requires a " +
   "non-admin JWT denial test before merge — that needs a logged-in (non-admin) " +

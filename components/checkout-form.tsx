@@ -27,6 +27,11 @@ import { useRef, useState } from "react";
  * kept in sessionStorage so the confirmation page can look the order
  * up, and the customer is sent to /order/confirmation?ref=...
  *
+ * S-3 (demo-safe): mobile banking (bKash / Nagad / Rocket) shows a
+ * Transaction ID + sender number pair — the customer pays first, then
+ * enters the TrxID. Card shows a note only; card details are NEVER
+ * collected. COD shows no extra fields. Payment details travel INSIDE
+ * `customer` in the checkout body (same shape as the S-2 fix).
  * On any failure the entered details are kept (controlled inputs).
  */
 
@@ -37,9 +42,16 @@ const FIELD_ORDER = [
   "address",
   "zone",
   "paymentMethod",
+  "paymentReference",
+  "paymentSender",
 ] as const;
 
 type FieldName = (typeof FIELD_ORDER)[number];
+
+/** Mobile-banking methods need TrxID + sender number (S-3). */
+function isMobileBankingMethodId(method: PaymentMethodId): boolean {
+  return method === "bkash" || method === "nagad" || method === "rocket";
+}
 
 const PAYMENT_GROUP_ORDER = ["Cash on Delivery", "Mobile Banking", "Card"];
 
@@ -57,6 +69,8 @@ export default function CheckoutForm() {
   const [zone, setZone] = useState<DeliveryZone>("inside");
   const [paymentMethod, setPaymentMethod] =
     useState<PaymentMethodId>("cod");
+  const [paymentReference, setPaymentReference] = useState("");
+  const [paymentSender, setPaymentSender] = useState("");
   const [errors, setErrors] = useState<Partial<Record<FieldName, string>>>(
     {},
   );
@@ -73,6 +87,8 @@ export default function CheckoutForm() {
   const addressRef = useRef<HTMLTextAreaElement>(null);
   const zoneRef = useRef<HTMLInputElement>(null);
   const paymentMethodRef = useRef<HTMLInputElement>(null);
+  const paymentReferenceRef = useRef<HTMLInputElement>(null);
+  const paymentSenderRef = useRef<HTMLInputElement>(null);
   const fieldRefs: Record<FieldName, React.RefObject<HTMLElement | null>> = {
     name: nameRef,
     phone: phoneRef,
@@ -80,7 +96,27 @@ export default function CheckoutForm() {
     address: addressRef,
     zone: zoneRef,
     paymentMethod: paymentMethodRef,
+    paymentReference: paymentReferenceRef,
+    paymentSender: paymentSenderRef,
   };
+
+  // Switching away from mobile banking clears the TrxID + sender
+  // number (and their errors) so a stale value can never be submitted
+  // with COD / card — the schema rejects non-empty details for those
+  // methods. Switching between mobile-banking methods keeps them.
+  function handlePaymentMethodChange(method: PaymentMethodId) {
+    setPaymentMethod(method);
+    if (!isMobileBankingMethodId(method)) {
+      setPaymentReference("");
+      setPaymentSender("");
+      setErrors((current) => {
+        const next = { ...current };
+        delete next.paymentReference;
+        delete next.paymentSender;
+        return next;
+      });
+    }
+  }
 
   const totals = computeTotals(subtotalBdt, zone);
 
@@ -105,6 +141,8 @@ export default function CheckoutForm() {
       address,
       zone,
       paymentMethod,
+      paymentReference,
+      paymentSender,
     });
 
     if (!parsed.success) {
@@ -167,6 +205,12 @@ export default function CheckoutForm() {
             address: data.address,
             zone: data.zone,
             paymentMethod: data.paymentMethod,
+            // S-3: payment details travel INSIDE customer (same shape
+            // as the S-2 fix). Empty strings become undefined here and
+            // are dropped by JSON.stringify, so the body stays clean
+            // for COD/card (no payment details sent for those methods).
+            paymentReference: data.paymentReference || undefined,
+            paymentSender: data.paymentSender || undefined,
           },
           items: items.map((item: BagItem) => ({
             slug: item.slug,
@@ -419,7 +463,7 @@ export default function CheckoutForm() {
                       name="paymentMethod"
                       value={method.id}
                       checked={paymentMethod === method.id}
-                      onChange={() => setPaymentMethod(method.id)}
+                      onChange={() => handlePaymentMethodChange(method.id)}
                       aria-describedby={
                         errors.paymentMethod
                           ? "checkout-paymentMethod-error"
@@ -450,6 +494,80 @@ export default function CheckoutForm() {
           </p>
         ) : null}
       </fieldset>
+
+      {isMobileBankingMethodId(paymentMethod) ? (
+        <div className="space-y-5">
+          <div>
+            <label
+              htmlFor="checkout-paymentReference"
+              className="mb-1 block font-semibold text-text"
+            >
+              Transaction ID (TrxID)
+            </label>
+            <input
+              ref={paymentReferenceRef}
+              id="checkout-paymentReference"
+              name="paymentReference"
+              type="text"
+              autoComplete="off"
+              inputMode="text"
+              placeholder="e.g. 9A1B2C3D4E"
+              value={paymentReference}
+              onChange={(event) => setPaymentReference(event.target.value)}
+              aria-invalid={Boolean(errors.paymentReference)}
+              aria-describedby={
+                errors.paymentReference
+                  ? "checkout-paymentReference-error"
+                  : undefined
+              }
+              className={inputClassName}
+            />
+            {errors.paymentReference ? (
+              <p
+                id="checkout-paymentReference-error"
+                className="mt-1 text-sm text-error"
+              >
+                {errors.paymentReference}
+              </p>
+            ) : null}
+          </div>
+
+          <div>
+            <label
+              htmlFor="checkout-paymentSender"
+              className="mb-1 block font-semibold text-text"
+            >
+              Sender mobile number
+            </label>
+            <input
+              ref={paymentSenderRef}
+              id="checkout-paymentSender"
+              name="paymentSender"
+              type="tel"
+              autoComplete="tel"
+              inputMode="tel"
+              placeholder="01XXXXXXXXX"
+              value={paymentSender}
+              onChange={(event) => setPaymentSender(event.target.value)}
+              aria-invalid={Boolean(errors.paymentSender)}
+              aria-describedby={
+                errors.paymentSender
+                  ? "checkout-paymentSender-error"
+                  : undefined
+              }
+              className={inputClassName}
+            />
+            {errors.paymentSender ? (
+              <p
+                id="checkout-paymentSender-error"
+                className="mt-1 text-sm text-error"
+              >
+                {errors.paymentSender}
+              </p>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
 
       <section
         aria-label="Order summary"
