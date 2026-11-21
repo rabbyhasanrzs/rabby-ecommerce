@@ -13,8 +13,10 @@ import { useState } from "react";
  * Product detail (interactive part) — gallery + colour variants.
  *
  * Gallery: primary image large, thumbnails below; selecting a thumbnail
- * swaps the large image. Photos live at /images/<file>; a missing file
- * renders the "Photo coming soon" placeholder, never a broken icon.
+ * swaps the large image. The main photo is zoomable: hovering magnifies
+ * it at the cursor, clicking opens a fullscreen lightbox. Photos live at
+ * /images/<file>; a missing file renders the "Photo coming soon"
+ * placeholder, never a broken icon — and with no photo there is no zoom.
  *
  * Variants: colour swatches. Selecting a variant updates the variant
  * name and the price/stock line. Demo data has NO per-variant price or
@@ -55,6 +57,7 @@ export default function ProductDetailClient({
         <ProductImage
           src={currentImage?.storage_path ?? null}
           alt={currentImage?.alt_text ?? product.name}
+          zoomable
           className="aspect-[4/3] w-full rounded-lg border border-border object-cover"
         />
         {images.length > 1 ? (

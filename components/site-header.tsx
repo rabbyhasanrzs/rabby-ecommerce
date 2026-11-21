@@ -1,3 +1,4 @@
+import { BagIcon, SearchIcon } from "@/components/icons";
 import Link from "next/link";
 
 const NAV_LINKS = [
@@ -48,14 +49,20 @@ export default function SiteHeader() {
             role="search"
             className="hidden w-full max-w-xs sm:flex"
           >
-            <label className="w-full">
+            <label className="relative w-full">
               <span className="sr-only">Search sunglasses</span>
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary"
+              >
+                <SearchIcon className="h-5 w-5" />
+              </span>
               <input
                 type="search"
                 name="search"
                 placeholder="Search sunglasses…"
                 aria-label="Search sunglasses"
-                className="h-10 w-full rounded-md border border-border bg-background px-3 text-base text-text placeholder:text-text-secondary"
+                className="h-10 w-full rounded-md border border-border bg-background pl-10 pr-3 text-base text-text placeholder:text-text-secondary"
               />
             </label>
           </form>
@@ -72,6 +79,7 @@ export default function SiteHeader() {
             className="flex shrink-0 items-center gap-1.5 text-base text-text hover:text-action"
             aria-label="Bag, 0 items (placeholder)"
           >
+            <BagIcon className="h-5 w-5 shrink-0" />
             Bag
             <span
               aria-hidden="true"
