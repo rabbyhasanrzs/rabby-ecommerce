@@ -17,6 +17,28 @@ import { useState } from "react";
 const inputClassName =
   "min-h-11 w-full rounded-md border border-border bg-surface px-3 py-2 text-base text-text";
 
+/**
+ * A server action that ends in redirect() throws NEXT_REDIRECT —
+ * the navigation still happens, but the throw also lands in the
+ * submit handler's catch. It must be ignored there, not turned
+ * into a "Something went wrong" flash on a successful sign-in.
+ * Same rule as components/admin/settings-form.tsx (which re-throws
+ * it); here the direct action call navigates regardless, so
+ * ignoring it is enough. Identified by message or digest (see
+ * next/dist/client/components/redirect-error.js, which reads the
+ * digest).
+ */
+function isRedirectError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  if (error.message.includes("NEXT_REDIRECT")) {
+    return true;
+  }
+  const digest = (error as { digest?: unknown }).digest;
+  return typeof digest === "string" && digest.startsWith("NEXT_REDIRECT");
+}
+
 export default function LoginForm({
   initialError,
   mfaHint,
@@ -61,7 +83,10 @@ export default function LoginForm({
       // plain-words error rather than leaving the owner staring at
       // a dead form.
       setError("Something went wrong. Please try again.");
-    } catch {
+    } catch (error) {
+      if (isRedirectError(error)) {
+        return;
+      }
       setError("Something went wrong. Please try again.");
     } finally {
       setPending(false);
@@ -82,7 +107,10 @@ export default function LoginForm({
         return;
       }
       setError("Something went wrong. Please try again.");
-    } catch {
+    } catch (error) {
+      if (isRedirectError(error)) {
+        return;
+      }
       setError("Something went wrong. Please try again.");
     } finally {
       setPending(false);

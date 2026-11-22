@@ -13,6 +13,19 @@ vi.mock("@/components/admin/login-actions", () => ({
 }));
 
 /**
+ * A faithful NEXT_REDIRECT-shaped error: a successful sign-in ends
+ * in redirect("/admin"), and the throw lands in the form's catch.
+ * Message and digest match what Next.js produces (see
+ * next/dist/client/components/redirect-error.js).
+ */
+function redirectError(): Error {
+  const error = new Error("NEXT_REDIRECT");
+  (error as { digest?: string }).digest =
+    "NEXT_REDIRECT;push;/admin;307;";
+  return error;
+}
+
+/**
  * Admin login form tests (S-4, T-40) — the server actions are
  * mocked; no network, no Supabase. Covers: rendering, the MFA
  * step appearing when sign-in requires it, and entered values
@@ -131,6 +144,70 @@ describe("LoginForm", () => {
     expect(await screen.findByText("Wrong code. Try again.")).toBeInTheDocument();
     expect(screen.getByLabelText("Verification code")).toHaveValue("000000");
     expect(verifyMock).toHaveBeenCalledWith("factor-1", "000000");
+  });
+
+  it("shows no error when the MFA verify redirects (successful sign-in)", async () => {
+    signInMock.mockResolvedValue({
+      ok: true,
+      needsMfa: true,
+      factorId: "factor-1",
+    });
+    verifyMock.mockRejectedValue(redirectError());
+    render(<LoginForm />);
+
+    fireEvent.change(screen.getByLabelText("Email"), {
+      target: { value: "owner@example.com" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "correct-password" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    const codeInput = await screen.findByLabelText("Verification code");
+    fireEvent.change(codeInput, { target: { value: "123456" } });
+    fireEvent.click(screen.getByRole("button", { name: "Verify code" }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Verify code" }),
+      ).toBeEnabled();
+    });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("shows no error when the credentials sign-in redirects (admin without MFA)", async () => {
+    signInMock.mockRejectedValue(redirectError());
+    render(<LoginForm />);
+
+    fireEvent.change(screen.getByLabelText("Email"), {
+      target: { value: "owner@example.com" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "correct-password" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Sign in" })).toBeEnabled();
+    });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("still shows the generic error on a non-redirect failure", async () => {
+    signInMock.mockRejectedValue(new Error("boom"));
+    render(<LoginForm />);
+
+    fireEvent.change(screen.getByLabelText("Email"), {
+      target: { value: "owner@example.com" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "correct-password" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect(
+      await screen.findByText("Something went wrong. Please try again."),
+    ).toBeInTheDocument();
   });
 
   it("goes back to the credentials step from the MFA step", async () => {
