@@ -47,7 +47,21 @@ export default function InventoryRow({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ productId, stockTotal: value }),
       });
-      const json: { ok?: boolean; error?: string } = await res.json();
+      let json: {
+        ok?: boolean;
+        error?: string;
+        code?: string;
+        session?: string;
+      };
+      try {
+        json = await res.json();
+      } catch {
+        // The server answered with something that is not JSON (a login
+        // page or an error page) — the session is gone. Send the admin
+        // back to sign in instead of showing a mystery error.
+        router.push("/admin/login");
+        return;
+      }
       // Timed out (S-6 follow-up, D-S6-1): the proxy answered 401
       // with a session kind — go to login with its message instead
       // of showing a save error.
@@ -57,6 +71,16 @@ export default function InventoryRow({
           router.push(`/admin/login?session=${kind}`);
           return;
         }
+        if (json.code === "mfa-missing") {
+          router.push("/admin/mfa-setup?required=1");
+          return;
+        }
+        if (json.code === "mfa-required") {
+          router.push("/admin/login?mfa=1");
+          return;
+        }
+        router.push("/admin/login");
+        return;
       }
       if (!res.ok || !json.ok) {
         setError(json.error ?? "Stock could not be saved.");
