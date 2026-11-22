@@ -81,6 +81,30 @@ function isMobileBankingMethodId(method: PaymentMethodId): boolean {
   return method === "bkash" || method === "nagad" || method === "rocket";
 }
 
+/**
+ * S-4: whether a payment method is switched on in the admin
+ * settings. The checkout list must follow these flags — a method
+ * the owner turned off must not be offered. Unknown ids stay on
+ * (never block checkout on a bad value).
+ */
+function isPaymentMethodEnabled(
+  method: PaymentMethodId,
+  settings: SiteSettings,
+): boolean {
+  switch (method) {
+    case "cod":
+      return settings.paymentCodEnabled;
+    case "bkash":
+      return settings.paymentBkashEnabled;
+    case "nagad":
+      return settings.paymentNagadEnabled;
+    case "rocket":
+      return settings.paymentRocketEnabled;
+    case "card":
+      return settings.paymentCardEnabled;
+  }
+}
+
 const PAYMENT_GROUP_ORDER = ["Cash on Delivery", "Mobile Banking", "Card"];
 
 const inputClassName =
@@ -193,6 +217,37 @@ export default function CheckoutForm() {
     zone,
     settings ? settingsToPricing(settings) : undefined,
   );
+
+  // S-4: only offer the payment methods the owner left switched on
+  // in Admin Settings. While settings are still loading (or the
+  // fetch failed) every method is offered — checkout is never
+  // blocked on settings. The server stays authoritative: it rejects
+  // a disabled method even if it is somehow submitted.
+  const enabledPaymentMethods = settings
+    ? PAYMENT_METHODS.filter((method) =>
+        isPaymentMethodEnabled(method.id, settings),
+      )
+    : PAYMENT_METHODS;
+  // If the offered set changes (settings arrive, or the owner
+  // turned a method off) and the current selection is no longer
+  // offered, move to the first offered method. Render-time
+  // adjustment, same pattern as the admin order-status form — no
+  // effect, so react-hooks/set-state-in-effect stays clean. The key
+  // is the joined ids, not the array identity: filter() builds a
+  // new array on every render.
+  const enabledPaymentKey = enabledPaymentMethods
+    .map((method) => method.id)
+    .join(",");
+  const [prevEnabledPaymentKey, setPrevEnabledPaymentKey] =
+    useState(enabledPaymentKey);
+  if (enabledPaymentKey !== prevEnabledPaymentKey) {
+    setPrevEnabledPaymentKey(enabledPaymentKey);
+    if (
+      !enabledPaymentMethods.some((method) => method.id === paymentMethod)
+    ) {
+      setPaymentMethod(enabledPaymentMethods[0]?.id ?? "cod");
+    }
+  }
 
   function focusFirstError(
     nextErrors: Partial<Record<FieldName, string>>,
@@ -514,15 +569,23 @@ export default function CheckoutForm() {
           Payment method
         </legend>
         <div className="space-y-4">
-          {PAYMENT_GROUP_ORDER.map((group) => (
-            <fieldset key={group}>
-              <legend className="mb-2 text-sm font-semibold text-text-secondary">
-                {group}
-              </legend>
-              <div className="space-y-2">
-                {PAYMENT_METHODS.filter(
-                  (method) => method.group === group,
-                ).map((method, index) => (
+          {PAYMENT_GROUP_ORDER.map((group) => {
+            // S-4: a group with no offered method is hidden entirely
+            // (e.g. Mobile Banking when bKash, Nagad and Rocket are
+            // all switched off in Settings).
+            const groupMethods = enabledPaymentMethods.filter(
+              (method) => method.group === group,
+            );
+            if (groupMethods.length === 0) {
+              return null;
+            }
+            return (
+              <fieldset key={group}>
+                <legend className="mb-2 text-sm font-semibold text-text-secondary">
+                  {group}
+                </legend>
+                <div className="space-y-2">
+                  {groupMethods.map((method, index) => (
                   <label
                     key={method.id}
                     className="flex min-h-11 cursor-pointer items-center gap-3 rounded-md border border-border bg-surface px-3 py-2"
@@ -556,8 +619,9 @@ export default function CheckoutForm() {
                   </label>
                 ))}
               </div>
-            </fieldset>
-          ))}
+              </fieldset>
+            );
+          })}
         </div>
         {errors.paymentMethod ? (
           <p

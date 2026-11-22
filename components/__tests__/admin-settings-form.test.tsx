@@ -121,9 +121,39 @@ describe("SettingsForm", () => {
     expect(formData.get("deliveryOutsideFeeBdt")).toBe("120");
     expect(formData.get("paymentCodEnabled")).toBe("on");
     expect(
-      await screen.findByText(
-        "Settings saved. The storefront now uses these values.",
-      ),
+      await screen.findByText("Settings saved. Nothing changed."),
+    ).toBeInTheDocument();
+  });
+
+  it("lists what changed after a successful save", async () => {
+    renderForm();
+
+    fireEvent.change(screen.getByLabelText("Tax rate (%)"), {
+      target: { value: "10" },
+    });
+    fireEvent.click(screen.getByLabelText("Rocket"));
+    fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
+
+    expect(
+      await screen.findByText("Settings saved successfully."),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Tax rate: 5% → 10%")).toBeInTheDocument();
+    expect(screen.getByText("Rocket: on → off")).toBeInTheDocument();
+  });
+
+  it("lists a delivery-fee change with the Taka amount", async () => {
+    renderForm();
+
+    fireEvent.change(screen.getByLabelText("Inside Dhaka — fee (৳)"), {
+      target: { value: "80" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
+
+    expect(
+      await screen.findByText("Settings saved successfully."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Delivery fee (Inside Dhaka): ৳60 → ৳80"),
     ).toBeInTheDocument();
   });
 

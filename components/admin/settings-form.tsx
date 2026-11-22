@@ -70,6 +70,109 @@ type PaymentField = (typeof PAYMENT_METHODS)[number]["field"];
 interface SettingsSaveState {
   ok: boolean;
   message: string;
+  /** Short "what changed" lines for a successful save, e.g. "Rocket: on → off". */
+  changes?: string[];
+}
+
+const showValue = (value: string): string =>
+  value === "" ? "(blank)" : value;
+
+/**
+ * Compare the submitted form values with the settings the page
+ * loaded, and describe each change in one short line. The owner
+ * asked to see not just "saved" but what actually changed.
+ * Numbers compare numerically (form values arrive as strings);
+ * payment toggles compare on/off; free-text fields (notice,
+ * contacts) only say "updated" — their content is not repeated.
+ */
+function describeSettingsChanges(
+  oldSettings: SiteSettings,
+  formData: FormData,
+): string[] {
+  const changes: string[] = [];
+
+  for (const method of PAYMENT_METHODS) {
+    const wasOn = oldSettings[method.field];
+    const isOn = formData.get(method.field) === "on";
+    if (wasOn !== isOn) {
+      changes.push(
+        `${method.label}: ${wasOn ? "on" : "off"} → ${isOn ? "on" : "off"}`,
+      );
+    }
+  }
+
+  const numberChange = (
+    label: string,
+    field: string,
+    oldValue: number,
+    format: (value: number) => string,
+  ): void => {
+    const raw = formData.get(field);
+    if (raw === null || raw === "") {
+      return;
+    }
+    const next = Number(raw);
+    if (!Number.isNaN(next) && next !== oldValue) {
+      changes.push(`${label}: ${format(oldValue)} → ${format(next)}`);
+    }
+  };
+  numberChange(
+    "Tax rate",
+    "taxRatePercent",
+    oldSettings.taxRatePercent,
+    (value) => `${value}%`,
+  );
+  numberChange(
+    "Delivery fee (Inside Dhaka)",
+    "deliveryInsideFeeBdt",
+    oldSettings.deliveryInsideFeeBdt,
+    (value) => `৳${value}`,
+  );
+  numberChange(
+    "Delivery fee (Outside Dhaka)",
+    "deliveryOutsideFeeBdt",
+    oldSettings.deliveryOutsideFeeBdt,
+    (value) => `৳${value}`,
+  );
+
+  const textChange = (
+    label: string,
+    field: string,
+    oldValue: string,
+    showValues: boolean,
+  ): void => {
+    const raw = formData.get(field);
+    if (typeof raw !== "string") {
+      return;
+    }
+    const next = raw.trim();
+    if (next !== oldValue) {
+      changes.push(
+        showValues
+          ? `${label}: ${showValue(oldValue)} → ${showValue(next)}`
+          : `${label}: updated`,
+      );
+    }
+  };
+  textChange(
+    "Delivery estimate (Inside Dhaka)",
+    "deliveryInsideEstimate",
+    oldSettings.deliveryInsideEstimate,
+    true,
+  );
+  textChange(
+    "Delivery estimate (Outside Dhaka)",
+    "deliveryOutsideEstimate",
+    oldSettings.deliveryOutsideEstimate,
+    true,
+  );
+  textChange("Website notice", "websiteNotice", oldSettings.websiteNotice, false);
+  textChange("WhatsApp", "supportWhatsapp", oldSettings.supportWhatsapp, false);
+  textChange("Messenger", "supportMessenger", oldSettings.supportMessenger, false);
+  textChange("Phone", "supportPhone", oldSettings.supportPhone, false);
+  textChange("Email", "supportEmail", oldSettings.supportEmail, false);
+
+  return changes;
 }
 
 function DemoBadge() {
@@ -110,9 +213,14 @@ export default function SettingsForm({
       try {
         const result = await updateSiteSettingsAction(formData);
         if (result.ok) {
+          const changes = describeSettingsChanges(settings, formData);
           return {
             ok: true,
-            message: "Settings saved. The storefront now uses these values.",
+            message:
+              changes.length > 0
+                ? "Settings saved successfully."
+                : "Settings saved. Nothing changed.",
+            changes,
           };
         }
         return {
@@ -504,12 +612,22 @@ export default function SettingsForm({
             Save settings
           </button>
           {settingsState ? (
-            <p
-              role="status"
-              className={`font-semibold ${settingsState.ok ? "text-success" : "text-error"}`}
-            >
-              {settingsState.message}
-            </p>
+            <div role="status">
+              <p
+                className={`font-semibold ${settingsState.ok ? "text-success" : "text-error"}`}
+              >
+                {settingsState.message}
+              </p>
+              {settingsState.ok &&
+              settingsState.changes &&
+              settingsState.changes.length > 0 ? (
+                <ul className="mt-1 list-disc space-y-0.5 pl-5 text-sm text-text">
+                  {settingsState.changes.map((change) => (
+                    <li key={change}>{change}</li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
           ) : null}
         </div>
       </form>
