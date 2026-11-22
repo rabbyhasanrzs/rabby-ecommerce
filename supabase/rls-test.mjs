@@ -555,8 +555,10 @@ if (signup.status === 200 && signup.data && typeof signup.data.access_token === 
   } else {
     jwtBlockedReason = `signup HTTP ${signup.status} (no session returned) and sign-in HTTP ${signin.status} — ` +
       "this project has email confirmation ON, so the throwaway user cannot sign in until confirmed. " +
-      "Create the user in the dashboard instead (Authentication -> Users -> Add user, tick 'Auto Confirm User'), " +
-      "then re-run; or turn off 'Confirm email' under Authentication -> Sign In / Providers.";
+      "Turn OFF 'Confirm email' in the dashboard (Authentication -> Sign In / Providers -> Email), re-run, " +
+      "then turn it back ON. (Creating the user in the dashboard does NOT help on its own: the script signs up " +
+      "a fresh throwaway email on every run, so only the toggle — or a confirmed user whose credentials the " +
+      "script knows — unblocks it.)";
   }
 }
 
