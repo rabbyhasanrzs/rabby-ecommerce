@@ -96,6 +96,11 @@ export async function POST(request: Request) {
       sort_order: 0,
     });
   if (variantError) {
+    // S-6 (T-61, S6-14): a later-step failure must not leave a
+    // half-created product (row with no variant/photo). Remove the
+    // product row and report the failure; the fuller fix is a
+    // single-transaction RPC.
+    await supabase.from("products").delete().eq("id", productId);
     return Response.json({ ok: false, error: GENERIC_ERROR }, { status: 500 });
   }
 
@@ -107,6 +112,8 @@ export async function POST(request: Request) {
     is_primary: true,
   });
   if (imageError) {
+    // Same as above: no orphan product row without its photo.
+    await supabase.from("products").delete().eq("id", productId);
     return Response.json({ ok: false, error: GENERIC_ERROR }, { status: 500 });
   }
 

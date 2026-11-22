@@ -1,6 +1,12 @@
 "use server";
 
+import {
+  LOGIN_RATE_LIMIT,
+  LOGIN_RATE_WINDOW_MS,
+  checkRateLimit,
+} from "@/lib/rate-limit";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 /**
@@ -37,6 +43,25 @@ export interface SignInResult {
 }
 
 const WRONG_CREDENTIALS = "Wrong email or password.";
+const RATE_LIMIT_ERROR =
+  "Too many attempts. Please try again in a few minutes.";
+
+/**
+ * Best-effort client identity for the login rate-limit key: the
+ * first IP in x-forwarded-for (set by Vercel's edge in production),
+ * else "unknown". Server actions have no Request object, so this
+ * reads next/headers directly.
+ */
+async function getLoginClientIp(): Promise<string> {
+  const forwarded = (await headers()).get("x-forwarded-for");
+  if (forwarded) {
+    const first = forwarded.split(",")[0]?.trim();
+    if (first) {
+      return first;
+    }
+  }
+  return "unknown";
+}
 
 export async function signInAction(
   formData: FormData,
@@ -45,6 +70,21 @@ export async function signInAction(
   const password = String(formData.get("password") ?? "");
   if (!email || !password) {
     return { ok: false, error: WRONG_CREDENTIALS };
+  }
+
+  // S-6 (T-61, S6-05): 10 attempts / 10 minutes per IP, checked
+  // before Supabase is called. A distinct message (not the generic
+  // wrong-credentials shape) so a rate-limited owner is not misled
+  // into thinking his password is wrong; it reveals nothing about
+  // whether the email exists, because it appears only after 10
+  // attempts from that IP.
+  const signInLimit = checkRateLimit(
+    `login:ip:${await getLoginClientIp()}`,
+    LOGIN_RATE_LIMIT,
+    LOGIN_RATE_WINDOW_MS,
+  );
+  if (!signInLimit.allowed) {
+    return { ok: false, error: RATE_LIMIT_ERROR };
   }
 
   const supabase = await createAdminClient();
@@ -86,6 +126,17 @@ export async function verifyMfaAction(
   const cleanCode = code.trim();
   if (!factorId || !cleanCode) {
     return { ok: false, error: "Wrong code. Try again." };
+  }
+
+  // S-6 (T-61, S6-05): same per-IP budget as sign-in, so the 6-digit
+  // TOTP code cannot be brute-forced through repeated verify calls.
+  const mfaLimit = checkRateLimit(
+    `login-mfa:ip:${await getLoginClientIp()}`,
+    LOGIN_RATE_LIMIT,
+    LOGIN_RATE_WINDOW_MS,
+  );
+  if (!mfaLimit.allowed) {
+    return { ok: false, error: RATE_LIMIT_ERROR };
   }
 
   const supabase = await createAdminClient();

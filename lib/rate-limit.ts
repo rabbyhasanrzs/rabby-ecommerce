@@ -2,8 +2,9 @@
  * In-memory sliding-window rate limiter for API route handlers (S-3, G-C4).
  *
  * Guards the order lookup / cancel routes against reference-guessing
- * (unguessable refs + reference + phone are already in place) and the
- * payment webhook against floods.
+ * (unguessable refs + reference + phone are already in place), the
+ * payment webhook against floods, and (S-6, T-61) the guest checkout
+ * + bag validation routes and the admin sign-in / MFA actions.
  *
  * Best-effort per server instance: each Node / serverless instance keeps
  * its own Map, so a limit is enforced per instance, not globally across
@@ -23,6 +24,31 @@ export const ORDER_RATE_WINDOW_MS = 10 * 60 * 1000;
 /** Payment webhook: 20 attempts per minute per IP. */
 export const WEBHOOK_RATE_LIMIT = 20;
 export const WEBHOOK_RATE_WINDOW_MS = 60 * 1000;
+
+/**
+ * Guest checkout: 10 attempts per 10 minutes per IP (S-6, T-61,
+ * S6-03). Checkout is the one public route that writes (order +
+ * stock decrement in one transaction), so it gets the same budget
+ * as the order lookup.
+ */
+export const CHECKOUT_RATE_LIMIT = 10;
+export const CHECKOUT_RATE_WINDOW_MS = 10 * 60 * 1000;
+
+/**
+ * Bag validation: 30 attempts per minute per IP (S-6, T-61, S6-03).
+ * Looser than checkout — the bag page calls it on every load — but
+ * still bounded so the route cannot be hammered.
+ */
+export const BAG_RATE_LIMIT = 30;
+export const BAG_RATE_WINDOW_MS = 60 * 1000;
+
+/**
+ * Admin sign-in / MFA verify: 10 attempts per 10 minutes per IP
+ * (S-6, T-61, S6-05). Server actions have no Request object, so the
+ * caller builds the key from next/headers (see login-actions.ts).
+ */
+export const LOGIN_RATE_LIMIT = 10;
+export const LOGIN_RATE_WINDOW_MS = 10 * 60 * 1000;
 
 const MAX_KEYS = 10_000;
 

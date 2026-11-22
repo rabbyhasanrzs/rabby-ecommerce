@@ -1,4 +1,4 @@
-import { buildProductJsonLd } from "@/lib/product-schema";
+import { serializeProductJsonLd } from "@/lib/product-schema";
 import { SITE_URL } from "@/lib/seo";
 import {
   CatalogueUnavailableError,
@@ -90,7 +90,10 @@ export default async function ProductLayout({
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{
-          __html: JSON.stringify(buildProductJsonLd(product)),
+          // S-6 (T-61, S6-02): serializeProductJsonLd escapes `<`, `>`,
+          // `&`, U+2028/U+2029, so a `</script>` in a product name or
+          // description cannot break out of this block.
+          __html: serializeProductJsonLd(product),
         }}
       />
       {children}

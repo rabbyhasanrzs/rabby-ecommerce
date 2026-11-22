@@ -119,7 +119,7 @@ describe("POST /api/webhooks/payment (S-3, T-32)", () => {
       ok: false,
       error: "Order not found.",
     });
-    expect(markMock).toHaveBeenCalledWith(REFERENCE, "paid");
+    expect(markMock).toHaveBeenCalledWith(REFERENCE, "paid", SECRET);
   });
 
   it("returns 200 and marks the order paid for a valid signed request", async () => {
@@ -133,7 +133,7 @@ describe("POST /api/webhooks/payment (S-3, T-32)", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true });
     expect(markMock).toHaveBeenCalledTimes(1);
-    expect(markMock).toHaveBeenCalledWith(REFERENCE, "paid");
+    expect(markMock).toHaveBeenCalledWith(REFERENCE, "paid", SECRET);
   });
 
   it("returns 200 and marks the order failed for a valid signed failure", async () => {
@@ -146,7 +146,7 @@ describe("POST /api/webhooks/payment (S-3, T-32)", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true });
-    expect(markMock).toHaveBeenCalledWith(REFERENCE, "failed");
+    expect(markMock).toHaveBeenCalledWith(REFERENCE, "failed", SECRET);
   });
 
   it("returns 400 for a signed payload with a bad reference and calls nothing", async () => {
@@ -207,6 +207,24 @@ describe("POST /api/webhooks/payment (S-3, T-32)", () => {
     expect(await response.json()).toEqual({
       ok: false,
       error: "Payment status cannot be changed.",
+    });
+  });
+
+  it("maps unauthorized to a generic 500 (DB secret out of sync — server misconfiguration)", async () => {
+    // S-6 (migration 0006): the function checks the secret itself, so
+    // a valid HMAC with a mismatched DB secret must not leak which
+    // side is wrong — just the generic error, no state change.
+    markMock.mockResolvedValue({ ok: false, error: "unauthorized" });
+
+    const response = await postSigned({
+      reference: REFERENCE,
+      status: "paid",
+    });
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({
+      ok: false,
+      error: "Something went wrong. Please try again.",
     });
   });
 

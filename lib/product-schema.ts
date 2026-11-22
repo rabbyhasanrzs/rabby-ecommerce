@@ -40,3 +40,24 @@ export function buildProductJsonLd(product: ProductDetail): Record<
     },
   };
 }
+
+/**
+ * Serialise a product JSON-LD object for injection into a
+ * `<script type="application/ld+json">` block (S-6, T-61, finding
+ * S6-02). Plain JSON.stringify does NOT escape `</script>`, so a
+ * product name/description containing `</script><script>…</script>`
+ * would break out of the JSON-LD block and execute in every
+ * visitor's browser (stored XSS via an admin-controlled field).
+ * Escaping `<`, `>`, `&`, U+2028 and U+2029 as \uXXXX keeps the JSON
+ * valid (the escapes decode to the same characters when parsed)
+ * while making a breakout impossible — the standard Next.js JSON-LD
+ * pattern.
+ */
+export function serializeProductJsonLd(product: ProductDetail): string {
+  return JSON.stringify(buildProductJsonLd(product))
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e")
+    .replace(/&/g, "\\u0026")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
+}

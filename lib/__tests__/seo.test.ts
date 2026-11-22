@@ -1,3 +1,4 @@
+import robots from "@/app/robots";
 import sitemap from "@/app/sitemap";
 import { buildProductJsonLd } from "@/lib/product-schema";
 import {
@@ -154,8 +155,27 @@ describe("sitemap", () => {
     listProductsMock.mockRejectedValue(new CatalogueUnavailableError());
     const entries = await sitemap();
     const urls = entries.map((entry) => entry.url);
-    for (const path of Object.keys(PAGE_SEO)) {
+    // Every PAGE_SEO route except the transactional flow pages
+    // (S-6, T-61, S6-10): /bag, /checkout, /orders and
+    // /order/confirmation are guest-flow pages and must not be
+    // indexed — they are absent from the sitemap by design.
+    const sitemapRoutes = Object.keys(PAGE_SEO).filter(
+      (path) =>
+        path !== "/bag" &&
+        path !== "/checkout" &&
+        path !== "/orders" &&
+        path !== "/order/confirmation",
+    );
+    for (const path of sitemapRoutes) {
       expect(urls).toContain(`${SITE_URL}${path}`);
+    }
+    for (const path of [
+      "/bag",
+      "/checkout",
+      "/orders",
+      "/order/confirmation",
+    ]) {
+      expect(urls).not.toContain(`${SITE_URL}${path}`);
     }
     expect(urls.some((url) => url.includes("/admin"))).toBe(false);
     for (const url of urls) {
@@ -187,5 +207,20 @@ describe("sitemap", () => {
       "https://rabby-ecommerce-uhrm.vercel.app/product/sample-aviator-a",
     );
     expect(urls.some((url) => url.includes("/admin"))).toBe(false);
+  });
+});
+
+describe("robots (S-6, T-61, S6-10)", () => {
+  it("disallows /admin and the transactional flow pages", () => {
+    const rules = robots();
+    expect(rules.rules).toMatchObject({
+      userAgent: "*",
+      allow: "/",
+    });
+    const disallow = (rules.rules as { disallow: string[] }).disallow;
+    for (const path of ["/admin", "/bag", "/checkout", "/order", "/orders"]) {
+      expect(disallow).toContain(path);
+    }
+    expect(rules.sitemap).toBe(`${SITE_URL}/sitemap.xml`);
   });
 });

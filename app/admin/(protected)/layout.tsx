@@ -1,6 +1,12 @@
 import SignOutButton from "@/components/admin/sign-out-button";
 import { requireAdmin } from "@/app/admin/(protected)/admin-data";
+import type { Metadata } from "next";
 import Link from "next/link";
+
+/** S-6, T-61, S6-10: the whole admin area is noindex. */
+export const metadata: Metadata = {
+  robots: { index: false, follow: false },
+};
 
 /**
  * Admin shell (S-4, T-41–T-46) — server layout for every /admin page

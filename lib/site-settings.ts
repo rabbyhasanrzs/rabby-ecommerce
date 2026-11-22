@@ -205,11 +205,70 @@ export async function getSiteSettings(): Promise<SiteSettings> {
  * FormData, so they are coerced; booleans arrive as checkbox state
  * ('on' / absent) and are normalised by parseSiteSettingsForm below.
  */
+
+/**
+ * A required integer from a FormData string (S-6, T-61, S6-07):
+ * z.coerce.number() turns "" into 0 (Number("") === 0), so a
+ * cleared tax field silently saved as tax 0%. An empty string is
+ * rejected before coercion, so a cleared field is an error, not a
+ * silent 0.
+ */
+const requiredInt = (max?: number) =>
+  z.preprocess(
+    (value) =>
+      typeof value === "string" && value.trim() === "" ? undefined : value,
+    max === undefined
+      ? z.coerce.number().int().min(0)
+      : z.coerce.number().int().min(0).max(max),
+  );
+
+/** A Bangladeshi mobile in 01XXXXXXXXX form (same shape as the checkout phoneSchema). */
+const bdPhonePattern = /^01[3-9]\d{8}$/;
+
+/**
+ * Support-contact format validation (S-6, T-61, S6-13). Every field
+ * may be empty (the owner has not provided it yet), but a provided
+ * value must be in a usable shape. WhatsApp accepts the owner's
+ * stored shape — a bare BD number — or an https link; Messenger an
+ * https link only; phone a BD number; email a valid address.
+ */
+const supportWhatsappSchema = z
+  .string()
+  .max(500)
+  .refine(
+    (value) =>
+      value === "" ||
+      bdPhonePattern.test(value) ||
+      value.startsWith("https://"),
+    "Enter a Bangladeshi mobile number or an https:// link.",
+  );
+const supportMessengerSchema = z
+  .string()
+  .max(500)
+  .refine(
+    (value) => value === "" || value.startsWith("https://"),
+    "Enter an https:// link.",
+  );
+const supportPhoneSchema = z
+  .string()
+  .max(500)
+  .refine(
+    (value) => value === "" || bdPhonePattern.test(value),
+    "Enter a valid Bangladeshi mobile number (01XXXXXXXXX).",
+  );
+const supportEmailSchema = z
+  .string()
+  .max(500)
+  .refine(
+    (value) => value === "" || z.string().email().safeParse(value).success,
+    "Enter a valid email address.",
+  );
+
 export const siteSettingsFormSchema = z.object({
-  taxRatePercent: z.coerce.number().int().min(0).max(100),
-  deliveryInsideFeeBdt: z.coerce.number().int().min(0),
+  taxRatePercent: requiredInt(100),
+  deliveryInsideFeeBdt: requiredInt(),
   deliveryInsideEstimate: z.string().min(1).max(100),
-  deliveryOutsideFeeBdt: z.coerce.number().int().min(0),
+  deliveryOutsideFeeBdt: requiredInt(),
   deliveryOutsideEstimate: z.string().min(1).max(100),
   paymentCodEnabled: z.boolean(),
   paymentBkashEnabled: z.boolean(),
@@ -217,10 +276,10 @@ export const siteSettingsFormSchema = z.object({
   paymentRocketEnabled: z.boolean(),
   paymentCardEnabled: z.boolean(),
   websiteNotice: z.string().max(500),
-  supportWhatsapp: z.string().max(500),
-  supportMessenger: z.string().max(500),
-  supportPhone: z.string().max(500),
-  supportEmail: z.string().max(500),
+  supportWhatsapp: supportWhatsappSchema,
+  supportMessenger: supportMessengerSchema,
+  supportPhone: supportPhoneSchema,
+  supportEmail: supportEmailSchema,
 });
 
 /** Read the Settings form fields out of a FormData (pure, testable). */

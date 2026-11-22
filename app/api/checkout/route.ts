@@ -1,11 +1,19 @@
 import { checkoutRequestSchema } from "@/lib/api-schemas";
 import {
+  CHECKOUT_RATE_LIMIT,
+  CHECKOUT_RATE_WINDOW_MS,
+  checkRateLimit,
+  getClientKey,
+} from "@/lib/rate-limit";
+import {
   createGuestOrder,
   GuestOrderError,
   SupabaseNotConfiguredError,
 } from "@/lib/supabase/orders";
 
 const GENERIC_ERROR = "Something went wrong. Please try again.";
+const RATE_LIMIT_ERROR =
+  "Too many attempts. Please try again in a few minutes.";
 
 /**
  * POST /api/checkout — create a guest order. The server re-prices every
@@ -20,6 +28,7 @@ const GENERIC_ERROR = "Something went wrong. Please try again.";
  * 200 { ok: true, reference, totalBdt } on success.
  * 400 invalid JSON / schema / customer validation failure.
  * 422 an item is gone or out of stock (bag no longer valid).
+ * 429 too many checkout attempts from this IP (10 / 10 minutes).
  * 503 Supabase not configured. 500 anything else (no stack traces).
  */
 export async function POST(request: Request) {
@@ -41,6 +50,24 @@ export async function POST(request: Request) {
         error: parsed.error.issues[0]?.message ?? "Invalid request.",
       },
       { status: 400 },
+    );
+  }
+
+  // S-6 (T-61, S6-03): checkout is the one public route that writes
+  // (order + stock decrement in one transaction). Checked AFTER the
+  // schema parse, so malformed requests never consume budget.
+  const checkoutLimit = checkRateLimit(
+    `checkout:ip:${getClientKey(request)}`,
+    CHECKOUT_RATE_LIMIT,
+    CHECKOUT_RATE_WINDOW_MS,
+  );
+  if (!checkoutLimit.allowed) {
+    return Response.json(
+      { ok: false, error: RATE_LIMIT_ERROR },
+      {
+        status: 429,
+        headers: { "Retry-After": String(checkoutLimit.retryAfterSeconds) },
+      },
     );
   }
 

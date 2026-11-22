@@ -114,9 +114,16 @@ export async function POST(request: Request) {
   }
 
   try {
+    // S-6 (migration 0006): the secret is also checked INSIDE the
+    // function, so a direct RPC call with the public anon key cannot
+    // mark an order paid. The route only reaches this call after the
+    // HMAC check above passed, so "unauthorized" here means the
+    // database secret and the env secret are out of sync — a server
+    // misconfiguration, reported as a generic 500.
     const result = await markOrderPaymentStatus(
       parsed.data.reference,
       parsed.data.status,
+      secret,
     );
     if (result.ok) {
       return Response.json({ ok: true });

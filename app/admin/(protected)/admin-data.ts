@@ -18,8 +18,9 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  * The client is cast to the untyped SupabaseClient on purpose: the
  * exact Database generic Slice A uses is not this slice's contract,
  * and these table/RPC names must keep working regardless of it.
- * No elevated service key is used anywhere. Sender numbers are never
- * returned by these helpers (the RPCs do not expose them to the UI).
+ * No elevated service key is used anywhere. Sender numbers ARE
+ * returned by admin_get_order (the admin needs them) but no admin
+ * page renders them — the UI shows the TrxID only.
  */
 
 // ---------------------------------------------------------------------------
@@ -132,7 +133,10 @@ export interface AdminOrderDetail {
   order: AdminOrder;
   items: AdminOrderItem[];
   status_events: AdminStatusEvent[];
-  /** Sender number is never included — the RPC does not return it. */
+  /** The sender number IS returned by admin_get_order (the admin
+   *  needs it) — it is deliberately never rendered by any admin
+   *  page; the UI shows the TrxID only (S-6, T-61, S6-23 corrected
+   *  the old comment, which wrongly claimed it was not returned). */
   payment: {
     method: string;
     status: string;

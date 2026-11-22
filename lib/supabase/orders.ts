@@ -37,7 +37,12 @@ export interface OrderDetail {
   status: string;
   customerName: string;
   customerPhone: string;
-  customerEmail: string;
+  /**
+   * S-6 (migration 0006): the guest lookup RPC no longer returns the
+   * customer email — no storefront page renders it — so lookupOrder
+   * sets null. (The admin's admin_get_order still returns it.)
+   */
+  customerEmail: string | null;
   deliveryAddress: string;
   deliveryZone: DeliveryZone;
   paymentMethod: PaymentMethodId;
@@ -47,11 +52,16 @@ export interface OrderDetail {
    * them (falling back to a method-derived status when the database
    * predates migration 0004), and the pages render through
    * paymentStatusLabel below, which treats a missing status the same
-   * way. paymentSender is carried for the server/API layer only —
-   * the pages never render it (TrxID only).
+   * way.
    */
   paymentStatus?: string;
   paymentReference?: string | null;
+  /**
+   * S-6 (migration 0006): the guest lookup RPC no longer returns the
+   * sender number — lookupOrder sets null. paymentSender is carried
+   * for the server/API layer only — the pages never render it
+   * (TrxID only). The admin's admin_get_order still returns it.
+   */
   paymentSender?: string | null;
   subtotalBdt: number;
   taxBdt: number;
@@ -414,7 +424,11 @@ interface LookupOrderRow {
   status: string;
   customer_name: string;
   customer_phone: string;
-  customer_email: string;
+  /** S-6 (migration 0006): the guest lookup no longer returns the
+   *  customer email or the mobile-banking sender number — neither is
+   *  rendered on any storefront page. The mapper below hard-codes
+   *  null for both (the OrderDetail shape is kept so the track /
+   *  confirmation pages do not change). */
   delivery_address: string;
   delivery_zone: string;
   payment_method: string;
@@ -422,7 +436,6 @@ interface LookupOrderRow {
    *  lookup function — the mapping below falls back accordingly. */
   payment_status?: string;
   payment_reference?: string | null;
-  payment_sender?: string | null;
   subtotal_bdt: number;
   tax_bdt: number;
   delivery_fee_bdt: number;
@@ -467,7 +480,11 @@ export async function lookupOrder(
     status: row.status,
     customerName: row.customer_name,
     customerPhone: row.customer_phone,
-    customerEmail: row.customer_email,
+    // S-6 (migration 0006): the guest lookup RPC no longer returns
+    // customer_email or payment_sender — neither is rendered on any
+    // storefront page. The delivery address stays: the track page
+    // renders it (app/orders/page.tsx:211).
+    customerEmail: null,
     deliveryAddress: row.delivery_address,
     deliveryZone: row.delivery_zone as DeliveryZone,
     paymentMethod: row.payment_method as PaymentMethodId,
@@ -475,7 +492,7 @@ export async function lookupOrder(
       row.payment_status ??
       (row.payment_method === "cod" ? "cod" : "pending"),
     paymentReference: row.payment_reference ?? null,
-    paymentSender: row.payment_sender ?? null,
+    paymentSender: null,
     subtotalBdt: row.subtotal_bdt,
     taxBdt: row.tax_bdt,
     deliveryFeeBdt: row.delivery_fee_bdt,
@@ -528,23 +545,36 @@ export async function cancelOrder(
 
 /**
  * Mark an order's payment status via mark_order_payment_status
- * (migration 0004). Only a 'pending' payment can move — a COD order
- * or one already 'paid' / 'failed' returns invalid_transition.
- * Imported by the webhook route (Slice B); the checkout flow never
- * calls it.
+ * (migration 0004; secret gate added by migration 0006, S-6 T-61).
+ * Only a 'pending' payment can move — a COD order or one already
+ * 'paid' / 'failed' returns invalid_transition. Imported by the
+ * webhook route (Slice B); the checkout flow never calls it.
+ *
+ * `secret` is the server-side webhook secret (PAYMENT_WEBHOOK_SECRET)
+ * — the function checks it against the stored secret in the
+ * server_secrets table and returns "unauthorized" when it does not
+ * match (or when no secret is stored, i.e. demo-safe mode). The
+ * secret is never a client value: only the webhook route passes it,
+ * after HMAC verification.
  */
 export async function markOrderPaymentStatus(
   reference: string,
   status: "paid" | "failed",
+  secret: string,
 ): Promise<{
   ok: boolean;
-  error?: "not_found" | "invalid_status" | "invalid_transition";
+  error?:
+    | "not_found"
+    | "invalid_status"
+    | "invalid_transition"
+    | "unauthorized";
 }> {
   const supabase = requireClient();
 
   const { data, error } = await supabase.rpc("mark_order_payment_status", {
     p_reference: reference,
     p_status: status,
+    p_secret: secret,
   });
   if (error) {
     throw new Error("Payment status update failed. Please try again.");
@@ -562,6 +592,9 @@ export async function markOrderPaymentStatus(
   }
   if (result.error === "invalid_transition") {
     return { ok: false, error: "invalid_transition" };
+  }
+  if (result.error === "unauthorized") {
+    return { ok: false, error: "unauthorized" };
   }
   throw new Error("Payment status update failed. Please try again.");
 }
