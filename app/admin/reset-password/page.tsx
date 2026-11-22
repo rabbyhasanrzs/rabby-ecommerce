@@ -1,7 +1,7 @@
+import ResetLinkHandler from "@/components/admin/reset-link-handler";
 import ResetPasswordForm from "@/components/admin/reset-password-form";
 import { createAdminClient, getAdminUser } from "@/lib/supabase/admin";
 import type { Metadata } from "next";
-import Link from "next/link";
 
 /** S-6, T-61, S6-10: the admin auth pages are noindex. */
 export const metadata: Metadata = {
@@ -20,7 +20,13 @@ export const metadata: Metadata = {
  * invalid-link message — never why the link failed.
  *
  * The callback route sends a failed exchange here as
- * ?error=invalid, which shows the same message.
+ * ?error=invalid. That no longer shows the invalid message
+ * immediately: the page renders ResetLinkHandler instead, which
+ * first checks the URL hash in the browser — an implicit-flow
+ * link (#access_token=...&refresh_token=...) carries its session
+ * there, where the server can never see it. Only when the hash
+ * holds no usable tokens does the handler show the same
+ * invalid-link message.
  */
 
 // The page reads the session (cookies()) — with Cache Components
@@ -37,42 +43,7 @@ function PageShell({ children }: { children: React.ReactNode }) {
   );
 }
 
-function InvalidLink() {
-  return (
-    <div className="mx-auto w-full max-w-md rounded-lg border border-border bg-surface p-6">
-      <h1 className="font-display text-2xl font-bold text-text">
-        This reset link is not valid
-      </h1>
-      <p className="mt-1 text-sm text-text-secondary">
-        It may have expired or already been used. Request a new one
-        and open it promptly.
-      </p>
-      <p className="mt-5 text-sm">
-        <Link
-          href="/admin/forgot-password"
-          className="font-semibold text-text-secondary hover:text-action"
-        >
-          Request a new reset link
-        </Link>
-      </p>
-    </div>
-  );
-}
-
-export default async function AdminResetPasswordPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ error?: string }>;
-}) {
-  const params = await searchParams;
-  if (params.error) {
-    return (
-      <PageShell>
-        <InvalidLink />
-      </PageShell>
-    );
-  }
-
+export default async function AdminResetPasswordPage() {
   let isAdminSession = false;
   try {
     const supabase = await createAdminClient();
@@ -89,17 +60,21 @@ export default async function AdminResetPasswordPage({
     isAdminSession = false;
   }
 
-  if (!isAdminSession) {
+  if (isAdminSession) {
     return (
       <PageShell>
-        <InvalidLink />
+        <ResetPasswordForm />
       </PageShell>
     );
   }
 
+  // No valid admin session — the handler gets its chance first:
+  // it reads the URL hash in the browser (implicit-flow links) and
+  // shows the invalid-link message only when no usable tokens
+  // are there. This also covers ?error=invalid from /auth/callback.
   return (
     <PageShell>
-      <ResetPasswordForm />
+      <ResetLinkHandler />
     </PageShell>
   );
 }
