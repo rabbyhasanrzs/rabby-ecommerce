@@ -33,6 +33,9 @@ import { z } from "zod";
 /** Slug allowlist — anything else is a 404, never a query. */
 export const slugSchema = z
   .string()
+  // S-6 (T-61, S6-25): a length bound for defence in depth (the
+  // regex alone allows an arbitrarily long slug).
+  .max(100)
   .regex(/^[a-z0-9-]+$/, "Slug may only contain lowercase letters, digits, and hyphens.");
 
 export function isValidSlug(slug: string): boolean {

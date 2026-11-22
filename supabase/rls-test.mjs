@@ -24,14 +24,18 @@
 //     * anon SELECT on payments returns 0 rows and anon INSERT /
 //       UPDATE / DELETE on payments is DENIED — payments has RLS
 //       enabled and NO policies, same as the orders tables.
-//     * the SECURITY DEFINER mark_order_payment_status function returns
-//       not_found for an unknown reference, and create_guest_order
-//       rejects a mobile-banking order with an invalid TrxID (the
-//       invalid-input probes create NO order).
+//     * the SECURITY DEFINER mark_order_payment_status function
+//       (S-6, migration 0006) returns "unauthorized" for a wrong
+//       secret — the secret gate is checked before the reference
+//       lookup — and create_guest_order rejects a mobile-banking
+//       order with an invalid TrxID (the invalid-input probes create
+//       NO order).
 //   S-4 (migration 0005):
 //     * anon SELECT on site_settings returns the 1 seeded row
-//       (public shop config — tax 5%, delivery 60/120); anon
-//       UPDATE / INSERT / DELETE on site_settings is DENIED.
+//       (public shop config — tax and delivery fees as ranges, not
+//       the seed values, because the owner edits them from the
+//       admin); anon UPDATE / INSERT / DELETE on site_settings is
+//       DENIED.
 //     * anon SELECT on discount_codes returns 0 rows (no anon
 //       policy) and anon INSERT into discount_codes is DENIED.
 //     * anon INSERT into admins is DENIED (no policies at all).
@@ -150,9 +154,19 @@ check("anon SELECT categories slugs are women/men/polarized",
 
 const products = await rest("GET", "products?select=id,slug,name,price_bdt,stock_total,status,is_demo&order=slug");
 check("anon SELECT products returns 200", products.status === 200, `HTTP ${products.status}`);
-check("anon SELECT products returns exactly 8 active demo rows",
-  Array.isArray(products.data) && products.data.length === 8 &&
-  products.data.every((p) => p.status === "active" && p.is_demo === true),
+// S-6 (T-61, S6-24): data-driven, not seed-count-driven — the owner
+// adds real products from the admin (the 9th product `rabby`,
+// is_demo=false, ৳3,000). Assert every row is active and every seed
+// slug is still present, instead of an exact total.
+const SEED_SLUGS = [
+  "sample-round-a", "sample-aviator-a", "sample-square-gold-a",
+  "sample-hexagon-a", "sample-blue-tint-a", "sample-futuristic-a",
+  "sample-red-lens-a", "sample-tortoise-a",
+];
+check("anon SELECT products: all rows active and all 8 seed products present",
+  Array.isArray(products.data) && products.data.length >= 8 &&
+  products.data.every((p) => p.status === "active") &&
+  SEED_SLUGS.every((s) => products.data.some((p) => p.slug === s)),
   Array.isArray(products.data) ? `${products.data.length} rows` : JSON.stringify(products.data).slice(0, 120));
 check("anon SELECT products: out-of-stock sample-futuristic-a visible with stock_total 0",
   Array.isArray(products.data) &&
@@ -168,25 +182,27 @@ check("anon SELECT products?status=eq.inactive returns 0 rows",
   `HTTP ${inactive.status}, ${Array.isArray(inactive.data) ? inactive.data.length : "?"} rows`);
 
 const variants = await rest("GET", "product_variants?select=id,product_id,colour,price_bdt,stock_quantity");
-check("anon SELECT product_variants returns 200 and exactly 16 rows (2 colours x 8 products)",
-  variants.status === 200 && Array.isArray(variants.data) && variants.data.length === 16,
+check("anon SELECT product_variants returns 200 and at least 16 rows (2 colours x 8 seed products)",
+  variants.status === 200 && Array.isArray(variants.data) && variants.data.length >= 16,
   `HTTP ${variants.status}, ${Array.isArray(variants.data) ? variants.data.length : "?"} rows`);
 check("anon SELECT product_variants: demo variant price/stock are NULL (not invented)",
   Array.isArray(variants.data) &&
   variants.data.every((v) => v.price_bdt === null && v.stock_quantity === null));
 
 const images = await rest("GET", "product_images?select=id,product_id,storage_path,is_primary");
-check("anon SELECT product_images returns 200 and exactly 8 primary rows",
-  images.status === 200 && Array.isArray(images.data) && images.data.length === 8 &&
+check("anon SELECT product_images returns 200 and at least 8 primary rows",
+  images.status === 200 && Array.isArray(images.data) && images.data.length >= 8 &&
   images.data.every((i) => i.is_primary === true),
   `HTTP ${images.status}, ${Array.isArray(images.data) ? images.data.length : "?"} rows`);
-check("anon SELECT product_images: storage_path values are /images/<file>",
+check("anon SELECT product_images: storage_path values are /images/<file> or a Supabase Storage URL",
   Array.isArray(images.data) &&
-  images.data.every((i) => typeof i.storage_path === "string" && i.storage_path.startsWith("/images/")));
+  images.data.every((i) => typeof i.storage_path === "string" &&
+    (i.storage_path.startsWith("/images/") ||
+      /^https:\/\/[a-z0-9-]+\.supabase\.co\//.test(i.storage_path))));
 
 const measurements = await rest("GET", "product_measurements?select=id,product_id,lens_width_mm,lens_height_mm,face_shape_ratings");
-check("anon SELECT product_measurements returns 200 and exactly 8 rows",
-  measurements.status === 200 && Array.isArray(measurements.data) && measurements.data.length === 8,
+check("anon SELECT product_measurements returns 200 and at least 8 rows",
+  measurements.status === 200 && Array.isArray(measurements.data) && measurements.data.length >= 8,
   `HTTP ${measurements.status}, ${Array.isArray(measurements.data) ? measurements.data.length : "?"} rows`);
 check("anon SELECT product_measurements: lens_height_mm present and face_shape_ratings is an object",
   Array.isArray(measurements.data) &&
@@ -344,7 +360,7 @@ if (isTableMissing(payments)) {
   check("anon UPDATE on payments is denied", false, blocked);
   check("anon DELETE on payments is denied", false, blocked);
   check("payments still has 0 rows after denied writes", false, blocked);
-  check("rpc mark_order_payment_status returns not_found for an unknown reference", false, blocked);
+  check("rpc mark_order_payment_status returns unauthorized for a wrong secret (S-6 secret gate)", false, blocked);
   check("rpc create_guest_order with bkash + an invalid TrxID returns a 4xx error (function validates payment details)", false, blocked);
   const failedSoFar = results.filter((r) => !r.passed);
   console.log(`\n${results.length - failedSoFar.length}/${results.length} checks passed.`);
@@ -374,13 +390,18 @@ check("payments still has 0 rows after denied writes",
   paymentsAfter.status === 200 && Array.isArray(paymentsAfter.data) && paymentsAfter.data.length === 0,
   `HTTP ${paymentsAfter.status}, ${Array.isArray(paymentsAfter.data) ? paymentsAfter.data.length : "?"} rows`);
 
-// SECURITY DEFINER function: unknown reference -> not_found (the
-// function exists and validates; no order state changes).
+// SECURITY DEFINER function with the S-6 secret gate (migration
+// 0006): a call with a wrong secret returns "unauthorized" BEFORE
+// the reference lookup, so an unauthenticated caller learns nothing
+// about whether the reference exists. No stored secret (demo-safe
+// mode) fails closed the same way. A correct secret cannot be
+// probed from here — it lives only in the server env + the
+// server_secrets table.
 const markUnknown = await rest("POST", "rpc/mark_order_payment_status",
-  { p_reference: "RB-2026-000000", p_status: "paid" });
-check("rpc mark_order_payment_status returns not_found for an unknown reference",
+  { p_reference: "RB-2026-000000", p_status: "paid", p_secret: "rls-probe-wrong-secret" });
+check("rpc mark_order_payment_status returns unauthorized for a wrong secret (S-6 secret gate)",
   markUnknown.status === 200 && markUnknown.data &&
-  markUnknown.data.ok === false && markUnknown.data.error === "not_found",
+  markUnknown.data.ok === false && markUnknown.data.error === "unauthorized",
   `HTTP ${markUnknown.status}, data: ${JSON.stringify(markUnknown.data).slice(0, 120)}`);
 
 // create with bkash + an INVALID TrxID must be rejected by the
@@ -414,7 +435,7 @@ check("rpc create_guest_order with bkash + an invalid TrxID returns a 4xx error 
 const siteSettings = await rest("GET", "site_settings?select=id,tax_rate_percent,delivery_inside_fee_bdt,delivery_outside_fee_bdt");
 if (isTableMissing(siteSettings)) {
   const blocked = "blocked — migration 0005 has NOT been applied yet; apply it in the dashboard SQL editor, then re-run this script.";
-  check("anon SELECT site_settings returns 200 with exactly 1 seeded row (tax 5, delivery 60/120)", false, blocked);
+  check("anon SELECT site_settings returns 200 with exactly 1 seeded row (tax 0–100, fees >= 0)", false, blocked);
   check("anon UPDATE on site_settings is denied", false, blocked);
   check("anon INSERT into site_settings is denied", false, blocked);
   check("anon DELETE on site_settings is denied", false, blocked);
@@ -431,10 +452,18 @@ if (isTableMissing(siteSettings)) {
   console.log("RESULT: FAIL — migration 0005 has NOT been applied yet (Section 6 blocked). Sections 1–5 passed; apply migration 0005, then re-run.");
   process.exit(1);
 }
-check("anon SELECT site_settings returns 200 with exactly 1 seeded row (tax 5, delivery 60/120)",
+check("anon SELECT site_settings returns 200 with exactly 1 seeded row (tax 0–100, fees >= 0)",
   siteSettings.status === 200 && Array.isArray(siteSettings.data) && siteSettings.data.length === 1 &&
-  siteSettings.data[0].id === 1 && siteSettings.data[0].tax_rate_percent === 5 &&
-  siteSettings.data[0].delivery_inside_fee_bdt === 60 && siteSettings.data[0].delivery_outside_fee_bdt === 120,
+  siteSettings.data[0].id === 1 &&
+  // S-6 (T-61, S6-24): ranges, not the seed values — the owner
+  // edits tax/fees from the admin (tax was 10% on 2026-11-22).
+  Number.isInteger(siteSettings.data[0].tax_rate_percent) &&
+  siteSettings.data[0].tax_rate_percent >= 0 &&
+  siteSettings.data[0].tax_rate_percent <= 100 &&
+  Number.isInteger(siteSettings.data[0].delivery_inside_fee_bdt) &&
+  siteSettings.data[0].delivery_inside_fee_bdt >= 0 &&
+  Number.isInteger(siteSettings.data[0].delivery_outside_fee_bdt) &&
+  siteSettings.data[0].delivery_outside_fee_bdt >= 0,
   `HTTP ${siteSettings.status}, ${JSON.stringify(siteSettings.data).slice(0, 160)}`);
 
 await expectDeniedWrite("anon UPDATE on site_settings is denied", "PATCH",
@@ -535,7 +564,11 @@ async function restAsJwt(token, method, path, body) {
 }
 
 const jwtStamp = Date.now();
-const probeEmail = `rls-test-${jwtStamp}@example.invalid`;
+// S-6 (T-61, S6-06): the old domain @example.invalid is REJECTED by
+// Supabase Auth ("email_address_invalid") before confirmation ever
+// matters — .invalid is a reserved TLD that never resolves. Use the
+// resolvable @example.com domain for the throwaway probe user.
+const probeEmail = `rls-test-${jwtStamp}@example.com`;
 const probePassword = `RlsProbe${jwtStamp}!`;
 let jwt = null;
 let jwtBlockedReason = "";
@@ -554,8 +587,8 @@ if (signup.status === 200 && signup.data && typeof signup.data.access_token === 
     jwt = signin.data.access_token;
   } else {
     jwtBlockedReason = `signup HTTP ${signup.status} (no session returned) and sign-in HTTP ${signin.status} — ` +
-      "this project has email confirmation ON, so the throwaway user cannot sign in until confirmed. " +
-      "Turn OFF 'Confirm email' in the dashboard (Authentication -> Sign In / Providers -> Email), re-run, " +
+      "either this project has email confirmation ON (the throwaway user cannot sign in until confirmed), or the " +
+      "probe email was rejected as invalid. Turn OFF 'Confirm email' in the dashboard (Authentication -> Sign In / Providers -> Email), re-run, " +
       "then turn it back ON. (Creating the user in the dashboard does NOT help on its own: the script signs up " +
       "a fresh throwaway email on every run, so only the toggle — or a confirmed user whose credentials the " +
       "script knows — unblocks it.)";
@@ -601,7 +634,7 @@ console.log(`NOTE: throwaway user ${probeEmail} signed out. It cannot be deleted
 const failed = results.filter((r) => !r.passed);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed.`);
 if (failed.length > 0) {
-  console.log("RESULT: FAIL — do NOT merge S-4 until every check passes.");
+  console.log("RESULT: FAIL — do NOT merge the S-6 security-review PR until every check passes.");
   process.exit(1);
 }
 console.log("RESULT: PASS — anon RLS contract holds for all 5 S-1 tables, for orders / order_items / order_status_events (S-2, no policies) and for payments (S-3, no policies — access only via SECURITY DEFINER functions), and for the S-4 admin tables (site_settings public-read-only, discount_codes + admins no anon access, admin RPCs authenticated-only) — and the non-admin JWT test (Section 6) proves a logged-in non-admin gets is_admin() = false, a denied product UPDATE and 0 order rows.");

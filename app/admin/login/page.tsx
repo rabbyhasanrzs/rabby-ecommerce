@@ -3,7 +3,13 @@ import {
   checkAdminAccess,
   createAdminClient,
 } from "@/lib/supabase/admin";
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+
+/** S-6, T-61, S6-10: the admin login page is noindex. */
+export const metadata: Metadata = {
+  robots: { index: false, follow: false },
+};
 
 /**
  * Admin login page (S-4, T-40) — outside the (protected) route

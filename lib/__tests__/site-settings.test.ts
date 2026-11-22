@@ -275,6 +275,72 @@ describe("siteSettingsFormSchema (admin save validation)", () => {
       }).success,
     ).toBe(false);
   });
+
+  it("rejects an empty tax / delivery fee instead of coercing it to 0 (S-6, S6-07)", () => {
+    for (const field of [
+      "taxRatePercent",
+      "deliveryInsideFeeBdt",
+      "deliveryOutsideFeeBdt",
+    ]) {
+      const parsed = siteSettingsFormSchema.safeParse({
+        ...validForm(),
+        [field]: "",
+      });
+      expect(parsed.success).toBe(false);
+    }
+  });
+
+  it("accepts the owner's stored support shapes (S-6, S6-13)", () => {
+    // Live values (2026-11-22): WhatsApp/phone are bare BD numbers.
+    expect(
+      siteSettingsFormSchema.safeParse({
+        ...validForm(),
+        supportWhatsapp: "01722544242",
+        supportPhone: "01722544242",
+        supportEmail: "rabbyhasanrzs518@gmail.com",
+      }).success,
+    ).toBe(true);
+    expect(
+      siteSettingsFormSchema.safeParse({
+        ...validForm(),
+        supportWhatsapp: "https://wa.me/8801722544242",
+        supportMessenger: "https://m.me/rabby.hasanrzs",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("rejects unusable support-contact values (S-6, S6-13)", () => {
+    expect(
+      siteSettingsFormSchema.safeParse({
+        ...validForm(),
+        supportWhatsapp: "not-a-number",
+      }).success,
+    ).toBe(false);
+    expect(
+      siteSettingsFormSchema.safeParse({
+        ...validForm(),
+        supportWhatsapp: "http://wa.me/8801722544242",
+      }).success,
+    ).toBe(false);
+    expect(
+      siteSettingsFormSchema.safeParse({
+        ...validForm(),
+        supportMessenger: "01722544242",
+      }).success,
+    ).toBe(false);
+    expect(
+      siteSettingsFormSchema.safeParse({
+        ...validForm(),
+        supportPhone: "12345",
+      }).success,
+    ).toBe(false);
+    expect(
+      siteSettingsFormSchema.safeParse({
+        ...validForm(),
+        supportEmail: "not-an-email",
+      }).success,
+    ).toBe(false);
+  });
 });
 
 describe("parseSiteSettingsForm", () => {

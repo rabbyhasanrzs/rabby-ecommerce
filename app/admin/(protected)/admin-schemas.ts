@@ -25,16 +25,48 @@ export const productSaveSchema = z.object({
   priceBdt: z
     .number()
     .int("Price must be a whole number of Taka.")
-    .min(1, "Enter a price greater than ৳0."),
+    .min(1, "Enter a price greater than ৳0.")
+    // S-6 (T-61, S6-08): an upper bound — a 12-digit price passed
+    // Zod and only failed later at the Postgres int insert with a
+    // generic 500. ৳1,000,000 matches the catalogue listing's
+    // existing price-filter cap (lib/supabase/catalog.ts).
+    .max(1000000, "Enter a price of ৳1,000,000 or less."),
   stockTotal: z
     .number()
     .int("Stock must be a whole number.")
-    .min(0, "Stock cannot be negative."),
+    .min(0, "Stock cannot be negative.")
+    // S-6 (T-61, S6-08): a generous cap, same reasoning as price.
+    .max(100000, "Enter stock of 100,000 or less."),
   status: z.enum(["active", "inactive"]),
   description: z.string().trim().max(2000).optional().default(""),
   colour: z.string().trim().min(1, "Enter a colour.").max(50),
-  /** Public URL of the uploaded photo (or the existing photo on edit). */
-  imageUrl: z.string().trim().min(1, "Upload a product photo."),
+  /**
+   * Public URL of the uploaded photo (or the existing photo on edit).
+   * S-6 (T-61, S6-08): only a same-origin /images/… path or an
+   * https URL on a Supabase Storage host — an arbitrary external URL
+   * bypasses the upload route's JPEG/PNG/WebP ≤ 5 MB allowlist and
+   * lets a photo hotlink (or track) from anywhere.
+   */
+  imageUrl: z
+    .string()
+    .trim()
+    .min(1, "Upload a product photo.")
+    .refine(
+      (value) =>
+        value.startsWith("/images/") ||
+        (() => {
+          try {
+            const url = new URL(value);
+            return (
+              url.protocol === "https:" &&
+              url.hostname.endsWith(".supabase.co")
+            );
+          } catch {
+            return false;
+          }
+        })(),
+      "Use a photo uploaded here (or a /images/ photo).",
+    ),
 });
 
 export type ProductSaveInput = z.infer<typeof productSaveSchema>;
@@ -46,7 +78,12 @@ export const categorySaveSchema = z.object({
 
 export const inventorySaveSchema = z.object({
   productId: z.string().uuid(),
-  stockTotal: z.number().int().min(0, "Stock cannot be negative."),
+  stockTotal: z
+    .number()
+    .int()
+    .min(0, "Stock cannot be negative.")
+    // S-6 (T-61, S6-08): same generous cap as the product schema.
+    .max(100000, "Enter stock of 100,000 or less."),
 });
 
 export const orderStatusUpdateSchema = z.object({

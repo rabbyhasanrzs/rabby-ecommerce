@@ -30,7 +30,9 @@ export type BagValidateRequest = z.infer<typeof bagValidateRequestSchema>;
 /** One checkout line: the server re-prices it from the DB (never trusts the client price). */
 const checkoutItemSchema = z.object({
   slug: slugSchema,
-  variantColour: z.string().nullable(),
+  // S-6 (T-61, S6-25): a length bound matching the admin product
+  // schema's colour field (admin-schemas.ts:35).
+  variantColour: z.string().max(50).nullable(),
   quantity: z.number().int().min(1).max(99),
 });
 

@@ -10,10 +10,14 @@ import type { MetadataRoute } from "next";
  * Sitemap — S-5, T-57.
  *
  * Every public route. NO /admin (and no /admin/*) — the admin is
- * excluded here and disallowed in robots.ts. Product pages are added
- * from the live catalogue when it can be read; when it cannot (no
- * env vars in CI, tables not yet created), the sitemap falls back to
- * the static routes only instead of failing the build.
+ * excluded here and disallowed in robots.ts. NO transactional flow
+ * pages either (S-6, T-61, S6-10): /bag, /checkout, /orders and
+ * /order/confirmation are guest-flow pages that must not be indexed
+ * — they are also disallowed in robots.ts and carry noindex metadata.
+ * Product pages are added from the live catalogue when it can be
+ * read; when it cannot (no env vars in CI, tables not yet created),
+ * the sitemap falls back to the static routes only instead of
+ * failing the build.
  */
 const STATIC_ROUTES: {
   path: string;
@@ -30,10 +34,6 @@ const STATIC_ROUTES: {
   { path: "/privacy", changeFrequency: "yearly", priority: 0.4 },
   { path: "/terms", changeFrequency: "yearly", priority: 0.4 },
   { path: "/about", changeFrequency: "monthly", priority: 0.5 },
-  { path: "/bag", changeFrequency: "weekly", priority: 0.5 },
-  { path: "/checkout", changeFrequency: "weekly", priority: 0.5 },
-  { path: "/orders", changeFrequency: "weekly", priority: 0.5 },
-  { path: "/order/confirmation", changeFrequency: "weekly", priority: 0.3 },
 ];
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {

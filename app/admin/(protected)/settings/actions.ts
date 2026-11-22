@@ -99,12 +99,18 @@ export async function toggleDiscountCodeAction(
   }
 
   const supabase = await adminClient();
-  const { error } = await supabase
+  // S-6 (T-61, S6-28): check that a row actually matched — the old
+  // code returned success even for a code that does not exist.
+  const { data, error } = await supabase
     .from("discount_codes")
     .update({ active })
-    .eq("code", code);
+    .eq("code", code)
+    .select("code");
   if (error) {
     return { ok: false, message: "The code could not be updated. Please try again." };
+  }
+  if (!data || data.length === 0) {
+    return { ok: false, message: `Discount code ${code} does not exist.` };
   }
 
   revalidatePath("/admin/settings");

@@ -81,18 +81,29 @@ export async function PATCH(
     .limit(1);
   const firstVariant = (variants as { id: string }[] | null)?.[0];
   if (firstVariant) {
-    await supabase
+    // S-6 (T-61, S6-14): the old code awaited this update without
+    // checking the result — a failed colour write was silently
+    // ignored while the product update above had already succeeded.
+    const { error: variantUpdateError } = await supabase
       .from("product_variants")
       .update({ colour: input.colour })
       .eq("id", firstVariant.id);
+    if (variantUpdateError) {
+      return Response.json({ ok: false, error: GENERIC_ERROR }, { status: 500 });
+    }
   } else {
-    await supabase.from("product_variants").insert({
-      product_id: id,
-      colour: input.colour,
-      price_bdt: null,
-      stock_quantity: null,
-      sort_order: 0,
-    });
+    const { error: variantInsertError } = await supabase
+      .from("product_variants")
+      .insert({
+        product_id: id,
+        colour: input.colour,
+        price_bdt: null,
+        stock_quantity: null,
+        sort_order: 0,
+      });
+    if (variantInsertError) {
+      return Response.json({ ok: false, error: GENERIC_ERROR }, { status: 500 });
+    }
   }
 
   // Photo: replace the primary image row when the URL changed, or
