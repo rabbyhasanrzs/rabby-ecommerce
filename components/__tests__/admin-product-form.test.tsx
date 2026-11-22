@@ -101,6 +101,49 @@ describe("ProductForm", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("shows the picked file by name, never as a blob-URL preview", async () => {
+    renderAddForm();
+    const input = screen.getByLabelText("Product photo");
+    fireEvent.change(input, {
+      target: {
+        files: [new File(["x"], "new-photo.webp", { type: "image/webp" })],
+      },
+    });
+
+    expect(
+      await screen.findByText(/Selected: new-photo\.webp/),
+    ).toBeInTheDocument();
+    // No preview image: the picked file is never rendered from an
+    // object URL (CodeQL xss-through-dom). The <img> shows only the
+    // already-saved photo, and an add form has none yet.
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
+  });
+
+  it("shows the saved photo in edit mode", () => {
+    render(
+      <ProductForm
+        categories={CATEGORIES}
+        initial={{
+          id: "22222222-2222-2222-2222-222222222222",
+          name: "Test Shades",
+          categoryId: null,
+          priceBdt: 950,
+          stockTotal: 12,
+          status: "active",
+          description: "",
+          colour: "Black",
+          imageUrl: "https://example.supabase.co/photo.webp",
+        }}
+        mode="edit"
+      />,
+    );
+
+    const img = screen.getByRole("img", { name: "Current product photo" });
+    expect(img.getAttribute("src")).toBe(
+      "https://example.supabase.co/photo.webp",
+    );
+  });
+
   it("saves an edit keeping the existing photo, without re-uploading", async () => {
     fetchMock.mockResolvedValue({
       ok: true,

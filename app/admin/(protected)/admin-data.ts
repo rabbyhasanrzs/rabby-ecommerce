@@ -18,7 +18,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  * The client is cast to the untyped SupabaseClient on purpose: the
  * exact Database generic Slice A uses is not this slice's contract,
  * and these table/RPC names must keep working regardless of it.
- * No service_role key is used anywhere. Sender numbers are never
+ * No elevated service key is used anywhere. Sender numbers are never
  * returned by these helpers (the RPCs do not expose them to the UI).
  */
 
@@ -394,15 +394,10 @@ export async function adminListCategories(): Promise<AdminCategoryRow[]> {
   return data as AdminCategoryRow[];
 }
 
-/** Slug from a name: lowercase, non-alphanumerics become one hyphen. */
-export function slugifyName(name: string): string {
-  return name
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 80);
-}
+// slugifyName lives in lib/slugify.ts (pure, client-safe, no regex —
+// see that file) and is re-exported here so API routes keep one import.
+
+export { slugifyName } from "@/lib/slugify";
 
 // ---------------------------------------------------------------------------
 // Validation schemas live in ./admin-schemas (client-safe, pure Zod)

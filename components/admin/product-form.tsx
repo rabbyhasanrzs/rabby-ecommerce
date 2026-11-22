@@ -17,6 +17,13 @@ import { useState } from "react";
  * Photo flow: pick a file -> POST /api/admin/products/upload ->
  * the public URL is stored and sent with the save. Editing keeps
  * the existing photo unless a new file is picked.
+ *
+ * The preview shows only the already-saved photo (a URL from our own
+ * Storage, passed in as `initial`). A newly picked file is shown by
+ * file name, never as a blob-URL preview: rendering an object URL
+ * built from a user-picked file trips the CodeQL xss-through-dom
+ * check, and the upload route already validates type + size
+ * server-side before the file is stored.
  */
 
 export interface ProductFormInitial {
@@ -59,8 +66,8 @@ export default function ProductForm({
   const [colour, setColour] = useState(initial?.colour ?? "Black");
   const [imageUrl] = useState<string | null>(initial?.imageUrl ?? null);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
-  const [photoPreview, setPhotoPreview] = useState<string | null>(
-    initial?.imageUrl ?? null,
+  const [selectedPhotoName, setSelectedPhotoName] = useState<string | null>(
+    null,
   );
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
@@ -68,11 +75,7 @@ export default function ProductForm({
 
   function handlePhotoChange(file: File | null) {
     setPhotoFile(file);
-    if (file) {
-      setPhotoPreview(URL.createObjectURL(file));
-    } else {
-      setPhotoPreview(imageUrl);
-    }
+    setSelectedPhotoName(file ? file.name : null);
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -309,11 +312,11 @@ export default function ProductForm({
         <span className="mb-1 block text-sm font-semibold text-text">
           Product photo
         </span>
-        {photoPreview ? (
+        {imageUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={photoPreview}
-            alt="Product photo preview"
+            src={imageUrl}
+            alt="Current product photo"
             className="mb-2 h-32 w-32 rounded-md border border-border object-cover"
           />
         ) : null}
@@ -326,6 +329,12 @@ export default function ProductForm({
           aria-label="Product photo"
           className="block w-full text-sm text-text"
         />
+        {selectedPhotoName ? (
+          <span className="mt-1 block text-sm text-text">
+            Selected: {selectedPhotoName} — it will replace the current
+            photo when you save.
+          </span>
+        ) : null}
         <span className="mt-1 block text-sm text-text-secondary">
           {mode === "edit"
             ? "Leave empty to keep the current photo."
