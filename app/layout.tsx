@@ -1,3 +1,4 @@
+import AnnouncementBanner from "@/components/announcement-banner";
 import MiniCartDrawer from "@/components/mini-cart-drawer";
 import SiteFooter from "@/components/site-footer";
 import SiteHeader from "@/components/site-header";
@@ -12,6 +13,7 @@ import type { Metadata } from "next";
 import { Inter, Playfair_Display } from "next/font/google";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { Suspense } from "react";
 import "./globals.css";
 
 /**
@@ -82,6 +84,19 @@ export default function RootLayout({
     >
       <body className="flex min-h-full flex-col">
         <BagProvider>
+          {/*
+           * S-6 follow-up (D-S6-5): the admin's websiteNotice as a
+           * storefront announcement banner, above the header on every
+           * storefront page. The banner itself renders nothing on
+           * /admin routes. Suspense fallback null: with cacheComponents
+           * on, the banner's usePathname can suspend on routes with
+           * dynamic params not covered by generateStaticParams
+           * (e.g. /product/[slug]); the boundary keeps the rest of
+           * the layout prerendered, and no banner space is reserved.
+           */}
+          <Suspense fallback={null}>
+            <AnnouncementBanner />
+          </Suspense>
           <SiteHeader />
           <div className="flex flex-1 flex-col">{children}</div>
           <SiteFooter />

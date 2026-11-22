@@ -6,6 +6,7 @@ import {
   PAYMENT_METHODS,
 } from "@/lib/demo-config";
 import { formatPriceBdt } from "@/lib/format";
+import { maskDeliveryAddress } from "@/lib/mask-address";
 import {
   isCancellableStatus,
   isMobileBankingMethod,
@@ -208,7 +209,13 @@ function TrackOrderContent() {
               </div>
               <div className="flex justify-between gap-4">
                 <dt className="font-semibold">Delivery address</dt>
-                <dd className="text-right">{order.deliveryAddress}</dd>
+                {/* S-6 (D-S6-6): masked on the track page only — house /
+                    road / flat hidden, area + city visible. The shared
+                    OrderDetail still carries the full address, so the
+                    confirmation page and the admin area are unaffected. */}
+                <dd className="text-right">
+                  {maskDeliveryAddress(order.deliveryAddress)}
+                </dd>
               </div>
               <div className="flex justify-between gap-4">
                 <dt className="font-semibold">Delivery</dt>

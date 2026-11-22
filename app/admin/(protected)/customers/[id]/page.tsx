@@ -4,36 +4,49 @@ import {
   adminListOrders,
   orderStatusLabel,
 } from "@/app/admin/(protected)/admin-data";
+import { customerIdForPhone, isPhoneShaped } from "@/lib/customer-id";
 import { formatPriceBdt } from "@/lib/format";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 
 /**
- * Admin Customer detail (S-4, T-45) — one customer's orders, with
- * reference, totals, payment and status, each linking to the order
- * detail. The orders come from admin_list_orders filtered to this
- * phone (the RPC has no phone filter; the grouping RPC is the
- * customer list). No sender numbers are shown anywhere.
+ * Admin Customer detail (S-4, T-45; S-6 follow-up D-S6-4) — one
+ * customer's orders, with reference, totals, payment and status, each
+ * linking to the order detail. The orders come from admin_list_orders
+ * filtered to this phone (the RPC has no phone filter; the grouping
+ * RPC is the customer list). No sender numbers are shown anywhere.
+ *
+ * The route param is an OPAQUE id, not a phone number: the first 16
+ * hex chars of SHA-256 of the customer's normalized phone (see
+ * lib/customer-id). The server resolves it by hashing each customer's
+ * phone and matching. A raw phone number as the param must NOT
+ * resolve — it 404s (explicit guard below), so old
+ * /admin/customers/01XXXXXXXXX URLs no longer open a customer.
  */
 async function AdminCustomerDetailPageContent({
   params,
 }: {
-  params: Promise<{ phone: string }>;
+  params: Promise<{ id: string }>;
 }) {
   await connection();
-  const { phone } = await params;
-  const decodedPhone = decodeURIComponent(phone);
+  const { id } = await params;
+  const decodedId = decodeURIComponent(id);
+  if (isPhoneShaped(decodedId)) {
+    notFound();
+  }
   const [customers, orders] = await Promise.all([
     adminListCustomers(),
     adminListOrders(null, 200, 0),
   ]);
-  const customer = customers.find((c) => c.phone === decodedPhone);
+  const customer = customers.find(
+    (c) => customerIdForPhone(c.phone) === decodedId,
+  );
   if (!customer) {
     notFound();
   }
   const customerOrders = orders.filter(
-    (order) => order.customer_phone === decodedPhone,
+    (order) => order.customer_phone === customer.phone,
   );
 
   return (
@@ -119,7 +132,7 @@ async function AdminCustomerDetailPageContent({
   );
 }
 
-export default function AdminCustomerDetailPage({ params }: { params: Promise<{ phone: string }> }) {
+export default function AdminCustomerDetailPage({ params }: { params: Promise<{ id: string }> }) {
   return (
     <Suspense fallback={<p className="mt-6 text-text-secondary">Loading…</p>}>
       <AdminCustomerDetailPageContent params={params} />

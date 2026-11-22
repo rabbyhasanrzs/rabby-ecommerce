@@ -171,6 +171,31 @@ describe("OrdersPage (track order)", () => {
     ).toBeInTheDocument();
   });
 
+  it("masks the delivery address on track, keeping area + city visible", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ ok: true, order: PLACED_ORDER }),
+    });
+    render(<OrdersPage />);
+
+    fireEvent.change(screen.getByLabelText("Order reference"), {
+      target: { value: "RB-2026-123456" },
+    });
+    fireEvent.change(screen.getByLabelText("Phone number"), {
+      target: { value: "01712345678" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Track order" }));
+
+    expect(
+      await screen.findByText("Order RB-2026-123456"),
+    ).toBeInTheDocument();
+    // S-6 (D-S6-6): house / road hidden, area + city visible.
+    expect(screen.getByText("•••, Dhanmondi, Dhaka")).toBeInTheDocument();
+    expect(screen.queryByText("House 12, Road 5, Dhanmondi, Dhaka")).toBeNull();
+    // The delivery zone is a separate field and stays unmasked.
+    expect(screen.getByText(/Inside Dhaka — 1–2 days/)).toBeInTheDocument();
+  });
+
   it("prefills the reference from ?ref=", () => {
     searchParamsHolder.value = "ref=RB-2026-123456";
     render(<OrdersPage />);

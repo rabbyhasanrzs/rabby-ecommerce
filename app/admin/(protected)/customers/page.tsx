@@ -1,14 +1,17 @@
 import { Suspense } from "react";
 import { adminListCustomers } from "@/app/admin/(protected)/admin-data";
+import { customerIdForPhone } from "@/lib/customer-id";
 import { formatPriceBdt } from "@/lib/format";
 import Link from "next/link";
 import { connection } from "next/server";
 
 /**
- * Admin Customers (S-4, T-45) — grouped-by-phone view over orders.
- * There is no customers table: guest checkout stores customer data
- * on the order, so a "customer" here is a phone number with its
- * orders grouped together.
+ * Admin Customers (S-4, T-45; S-6 follow-up D-S6-4) — grouped-by-phone
+ * view over orders. There is no customers table: guest checkout stores
+ * customer data on the order, so a "customer" here is a phone number
+ * with its orders grouped together. The phone is still DISPLAYED in
+ * the table, but the link to a customer uses an opaque hash id
+ * (lib/customer-id) — no phone number appears in any admin URL.
  */
 async function AdminCustomersPageContent() {
   await connection();
@@ -56,7 +59,7 @@ async function AdminCustomersPageContent() {
                 >
                   <td className="px-4 py-3 font-semibold text-text">
                     <Link
-                      href={`/admin/customers/${encodeURIComponent(customer.phone)}`}
+                      href={`/admin/customers/${customerIdForPhone(customer.phone)}`}
                       className="text-action underline"
                     >
                       {customer.phone}
