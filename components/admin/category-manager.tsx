@@ -1,5 +1,7 @@
 "use client";
 
+import { getSessionTimeoutKind } from "@/lib/admin-session";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 /**
@@ -23,6 +25,7 @@ export default function CategoryManager({
 }: {
   categories: CategoryRow[];
 }) {
+  const router = useRouter();
   const [name, setName] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
@@ -46,6 +49,16 @@ export default function CategoryManager({
     const json: { ok?: boolean; error?: string } = await res.json().catch(
       () => ({}),
     );
+    // Timed out (S-6 follow-up, D-S6-1): the proxy answered 401 with
+    // a session kind — go to login with its message. The empty error
+    // keeps a stale message from flashing while the redirect lands.
+    if (res.status === 401) {
+      const kind = getSessionTimeoutKind(json);
+      if (kind) {
+        router.push(`/admin/login?session=${kind}`);
+        return { ok: false, error: "" };
+      }
+    }
     return { ok: res.ok && json.ok === true, error: json.error };
   }
 

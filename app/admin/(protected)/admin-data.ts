@@ -279,30 +279,21 @@ export async function adminUpdatePaymentStatus(
 // Order status workflow (7 steps + terminal states)
 // ---------------------------------------------------------------------------
 
-/** Allowed next statuses for each current status. Cancel is offered
- *  only before the order ships (same rule as the customer cancel).
- *  NOTE (migration 0005): the RPC rejects ANY transition out of
- *  delivered / cancelled / refunded as invalid_transition, so a
- *  delivered order has no next status here — a delivered order
- *  cannot be marked Returned through this RPC (returns flow is a
- *  follow-up, not S-4). */
-export const NEXT_STATUSES: Record<string, string[]> = {
-  placed: ["confirmed", "cancelled"],
-  confirmed: ["processing", "cancelled"],
-  processing: ["packed", "cancelled"],
-  packed: ["shipped", "cancelled"],
-  shipped: ["out_for_delivery"],
-  out_for_delivery: ["delivered"],
-  delivered: ["returned"],
-  returned: ["refunded"],
-  cancelled: [],
-  failed: [],
-  refunded: [],
-};
-
-export function allowedNextStatuses(status: string): string[] {
-  return NEXT_STATUSES[status] ?? [];
-}
+// The free-movement target lists live in lib/order-status-targets.ts
+// (pure module, no server-only imports) and are re-exported here so
+// server code keeps one import. S-6 follow-up D-S6-3 replaced the
+// old next-only NEXT_STATUSES / allowedNextStatuses: the admin may
+// now jump to any target the server accepts. NOTE: the old comment
+// above NEXT_STATUSES wrongly claimed the RPC rejects moves out of
+// delivered — it does not. The RPC (migration 0005,
+// admin_update_order_status) accepts ANY valid status and only
+// rejects invalid status strings and transitions OUT of the terminal
+// statuses cancelled / failed / refunded. Delivered -> Returned is
+// the return path, not a rejected move.
+export {
+  ALLOWED_TARGET_STATUSES,
+  allowedTargetStatuses,
+} from "@/lib/order-status-targets";
 
 export const ORDER_STATUS_LABELS: Record<string, string> = {
   placed: "Placed",

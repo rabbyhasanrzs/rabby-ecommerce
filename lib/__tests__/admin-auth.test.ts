@@ -106,10 +106,10 @@ describe("checkAdminAccess", () => {
     expect(access.status).toBe("forbidden");
   });
 
-  it("returns ok for an admin with no enrolled MFA factor", async () => {
+  it("returns mfa-missing for an admin with no enrolled MFA factor (D-S6-2: MFA is mandatory)", async () => {
     const access = await checkAdminAccess(mockClient({}));
-    expect(access.status).toBe("ok");
-    expect(access.user?.id).toBe("user-1");
+    expect(access.status).toBe("mfa-missing");
+    expect(access.user).toBeNull();
   });
 
   it("returns mfa-required for an admin with a verified totp factor at aal1", async () => {
@@ -122,7 +122,7 @@ describe("checkAdminAccess", () => {
     expect(access.status).toBe("mfa-required");
   });
 
-  it("returns ok for an admin with a verified totp factor already at aal2", async () => {
+  it("returns ok for an admin with a verified totp factor already at aal2 (the owner's enrolled account keeps working)", async () => {
     const access = await checkAdminAccess(
       mockClient({
         totpFactors: [{ id: "factor-1", status: "verified" }],
@@ -132,24 +132,31 @@ describe("checkAdminAccess", () => {
     expect(access.status).toBe("ok");
   });
 
-  it("ignores unverified totp factors (enrollment not finished)", async () => {
+  it("treats unverified totp factors as not enrolled (mfa-missing)", async () => {
     const access = await checkAdminAccess(
       mockClient({
         totpFactors: [{ id: "factor-1", status: "unverified" }],
         currentLevel: "aal1",
       }),
     );
-    expect(access.status).toBe("ok");
+    expect(access.status).toBe("mfa-missing");
   });
 
-  it("skips the MFA check (allows the admin) when MFA status cannot be read", async () => {
+  it("fails CLOSED (mfa-required) when MFA status cannot be read", async () => {
     const access = await checkAdminAccess(
       mockClient({
         totpFactors: [{ id: "factor-1", status: "verified" }],
         mfaError: true,
       }),
     );
-    expect(access.status).toBe("ok");
+    expect(access.status).toBe("mfa-required");
+    expect(access.user).toBeNull();
+  });
+
+  it("fails CLOSED (mfa-required) when MFA status cannot be read for a factor-less admin too", async () => {
+    const access = await checkAdminAccess(mockClient({ mfaError: true }));
+    expect(access.status).toBe("mfa-required");
+    expect(access.user).toBeNull();
   });
 });
 
@@ -177,8 +184,25 @@ describe("requireAdmin", () => {
     ).rejects.toThrow("REDIRECT:/admin/login?mfa=1");
   });
 
-  it("returns the user for a fully verified admin", async () => {
-    const user = await requireAdmin(mockClient({}));
+  it("redirects an admin with no enrolled MFA factor to /admin/mfa-setup?required=1", async () => {
+    await expect(requireAdmin(mockClient({}))).rejects.toThrow(
+      "REDIRECT:/admin/mfa-setup?required=1",
+    );
+  });
+
+  it("redirects to /admin/login?mfa=1 (fail closed) when MFA status cannot be read", async () => {
+    await expect(
+      requireAdmin(mockClient({ mfaError: true })),
+    ).rejects.toThrow("REDIRECT:/admin/login?mfa=1");
+  });
+
+  it("returns the user for a fully verified admin (verified factor at aal2)", async () => {
+    const user = await requireAdmin(
+      mockClient({
+        totpFactors: [{ id: "factor-1", status: "verified" }],
+        currentLevel: "aal2",
+      }),
+    );
     expect(user.id).toBe("user-1");
   });
 

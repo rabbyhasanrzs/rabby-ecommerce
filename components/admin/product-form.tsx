@@ -1,6 +1,7 @@
 "use client";
 
 import { productSaveSchema } from "@/app/admin/(protected)/admin-schemas";
+import { getSessionTimeoutKind } from "@/lib/admin-session";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -116,6 +117,17 @@ export default function ProductForm({
         });
         const uploadJson: { ok?: boolean; url?: string; error?: string } =
           await uploadRes.json();
+        // Timed out (S-6 follow-up, D-S6-1): the proxy answered 401
+        // with a session kind — go to login with its message instead
+        // of showing a save error.
+        if (uploadRes.status === 401) {
+          const kind = getSessionTimeoutKind(uploadJson);
+          if (kind) {
+            router.push(`/admin/login?session=${kind}`);
+            setSaving(false);
+            return;
+          }
+        }
         if (!uploadRes.ok || !uploadJson.ok || !uploadJson.url) {
           setFormError(
             uploadJson.error ?? "The photo could not be uploaded.",
@@ -159,6 +171,14 @@ export default function ProductForm({
         body: JSON.stringify(parsed.data),
       });
       const json: { ok?: boolean; error?: string } = await res.json();
+      if (res.status === 401) {
+        const kind = getSessionTimeoutKind(json);
+        if (kind) {
+          router.push(`/admin/login?session=${kind}`);
+          setSaving(false);
+          return;
+        }
+      }
       if (!res.ok || !json.ok) {
         setFormError(json.error ?? "The product could not be saved.");
         setSaving(false);

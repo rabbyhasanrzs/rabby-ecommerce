@@ -20,11 +20,18 @@ const inputClassName =
 export default function LoginForm({
   initialError,
   mfaHint,
+  sessionMessage,
 }: {
   /** Shown when redirected here by requireAdmin() (non-admin). */
   initialError?: string | null;
   /** Shown when redirected here by requireAdmin() (MFA re-check). */
   mfaHint?: boolean;
+  /**
+   * Plain-words timeout message (?session=idle / =absolute,
+   * S-6 follow-up, D-S6-1). A separate slot from the error one:
+   * this is information, not a sign-in failure.
+   */
+  sessionMessage?: string | null;
 }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -95,6 +102,11 @@ export default function LoginForm({
       {mfaHint && !factorId ? (
         <p className="mt-3 rounded-md border border-border bg-background-subtle px-3 py-2 text-sm text-text">
           Your session needs a fresh verification code. Sign in again.
+        </p>
+      ) : null}
+      {sessionMessage && !factorId ? (
+        <p className="mt-3 rounded-md border border-border bg-background-subtle px-3 py-2 text-sm text-text">
+          {sessionMessage}
         </p>
       ) : null}
       {error ? (

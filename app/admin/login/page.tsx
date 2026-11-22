@@ -1,4 +1,5 @@
 import LoginForm from "@/components/admin/login-form";
+import { getSessionTimeoutMessage } from "@/lib/admin-session";
 import {
   checkAdminAccess,
   createAdminClient,
@@ -17,7 +18,9 @@ export const metadata: Metadata = {
  * An already signed-in, fully verified admin is sent straight to
  * /admin. A non-admin who lands here via requireAdmin() sees a
  * plain-words message (?error=forbidden); an admin whose session
- * needs a fresh MFA check sees the ?mfa=1 hint.
+ * needs a fresh MFA check sees the ?mfa=1 hint. A timed-out admin
+ * lands here with ?session=idle (or =absolute) and sees the matching
+ * plain-words timeout message (S-6 follow-up, D-S6-1).
  */
 
 // The page reads the session (cookies()) to skip the form for an
@@ -29,7 +32,7 @@ export const instant = false;
 export default async function AdminLoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; mfa?: string }>;
+  searchParams: Promise<{ error?: string; mfa?: string; session?: string }>;
 }) {
   const params = await searchParams;
 
@@ -39,6 +42,11 @@ export default async function AdminLoginPage({
     const access = await checkAdminAccess(supabase);
     if (access.status === "ok") {
       redirect("/admin");
+    }
+    // S-6, D-S6-2 (Slice B): signed in as an admin but no verified
+    // MFA factor yet — send them to enrollment, not the Dashboard.
+    if (access.status === "mfa-missing") {
+      redirect("/admin/mfa-setup?required=1");
     }
   } catch {
     // No session / Supabase not configured — render the form.
@@ -55,6 +63,7 @@ export default async function AdminLoginPage({
               : null
           }
           mfaHint={params.mfa === "1"}
+          sessionMessage={getSessionTimeoutMessage(params.session)}
         />
       </div>
     </main>
