@@ -1,4 +1,5 @@
 import { checkoutRequestSchema } from "@/lib/api-schemas";
+import { sendOrderConfirmationEmail } from "@/lib/order-email";
 import {
   CHECKOUT_RATE_LIMIT,
   CHECKOUT_RATE_WINDOW_MS,
@@ -76,6 +77,23 @@ export async function POST(request: Request) {
       customer: parsed.data.customer,
       items: parsed.data.items,
     });
+    // S-6: order confirmation email (Launch Decision 4, Gmail SMTP).
+    // A failure here must NEVER fail the order: the send function
+    // never throws, and this call is wrapped as well, so the customer
+    // always gets the success response. Missing env vars = skipped.
+    try {
+      await sendOrderConfirmationEmail({
+        reference,
+        phone: parsed.data.customer.phone,
+        customerEmail: parsed.data.customer.email,
+      });
+    } catch (error) {
+      console.error(
+        "[order-email] confirmation email failed",
+        reference,
+        error instanceof Error ? error.message : "unknown error",
+      );
+    }
     return Response.json({ ok: true, reference, totalBdt });
   } catch (error) {
     if (error instanceof GuestOrderError) {
