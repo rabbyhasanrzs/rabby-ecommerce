@@ -25,9 +25,10 @@ import { NextResponse, type NextRequest } from "next/server";
  *      @supabase/ssr createServerClient cookie dance), so a
  *      signed-in admin stays signed in.
  *   2. Redirect a request with NO session for /admin/* (except
- *      /admin/login) to /admin/login. An /api/admin/* request with
- *      no session gets a 401 JSON instead — a fetch caller cannot
- *      use an HTML redirect.
+ *      the public auth pages: /admin/login, /admin/forgot-password,
+ *      /admin/reset-password) to /admin/login. An /api/admin/*
+ *      request with no session gets a 401 JSON instead — a fetch
+ *      caller cannot use an HTML redirect.
  *   3. Enforce the admin session timeout (S-6 follow-up, D-S6-1):
  *      30 minutes idle or 8 hours absolute since sign-in, tracked
  *      in the httpOnly `admin-session` cookie set at sign-in (see
@@ -38,7 +39,7 @@ import { NextResponse, type NextRequest } from "next/server";
  *      request is redirected to /admin/login?session=idle (or
  *      =absolute) while an API request gets a 401 JSON with the
  *      same kind in its `session` field.
- *      The login page itself is never locked out by the timeout.
+ *      The public auth pages are never locked out by the timeout.
  *      A signed-in admin with NO session cookie (signed in before
  *      this deploy) is backfilled with a fresh cookie — the clock
  *      starts now, so nobody is surprise-logged-out by the deploy.
@@ -86,7 +87,19 @@ export default async function proxy(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const isLoginPage = pathname === "/admin/login";
+  /**
+   * Public admin pages — reachable without a session: the login
+   * form and the two password-reset pages (a logged-out admin
+   * must be able to open them). Everything else under /admin/*
+   * needs a session; the role + MFA gate is requireAdmin() on
+   * the page, and the database.
+   */
+  const PUBLIC_ADMIN_PAGES = new Set([
+    "/admin/login",
+    "/admin/forgot-password",
+    "/admin/reset-password",
+  ]);
+  const isPublicAdminPage = PUBLIC_ADMIN_PAGES.has(pathname);
   const isApi = pathname.startsWith("/api/admin/");
 
   if (!user) {
@@ -97,7 +110,7 @@ export default async function proxy(request: NextRequest) {
         { status: 401 },
       );
     }
-    if (!isLoginPage) {
+    if (!isPublicAdminPage) {
       const loginUrl = request.nextUrl.clone();
       loginUrl.pathname = "/admin/login";
       return NextResponse.redirect(loginUrl);
@@ -105,8 +118,8 @@ export default async function proxy(request: NextRequest) {
     return supabaseResponse;
   }
 
-  // The login page is never locked out by the timeout.
-  if (isLoginPage) {
+  // The public auth pages are never locked out by the timeout.
+  if (isPublicAdminPage) {
     return supabaseResponse;
   }
 
