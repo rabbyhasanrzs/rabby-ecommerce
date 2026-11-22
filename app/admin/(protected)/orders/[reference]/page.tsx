@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import {
   adminGetOrder,
-  allowedNextStatuses,
+  allowedTargetStatuses,
   orderStatusLabel,
   ORDER_STATUS_LABELS,
 } from "@/app/admin/(protected)/admin-data";
@@ -268,7 +268,7 @@ async function AdminOrderDetailPageContent({
             <OrderStatusForm
               reference={order.reference}
               currentStatus={order.status}
-              allowedStatuses={allowedNextStatuses(order.status)}
+              allowedStatuses={allowedTargetStatuses(order.status)}
               statusLabels={ORDER_STATUS_LABELS}
             />
           </div>

@@ -10,6 +10,9 @@ import { useEffect, useState } from "react";
  * All client-side with the browser Supabase client (anon key only):
  * enroll a TOTP factor, verify it with a code from the
  * authenticator app, show the current status, and unenroll.
+ * Unenrolling needs a FRESH code from the authenticator app first
+ * (S-6, D-S6-2): one-click unenroll without it is gone, so a
+ * signed-in session alone cannot drop the admin to password-only.
  *
  * The secret + otpauth URL are shown as TEXT the owner can type
  * into their authenticator app manually — no QR-code library is
@@ -171,7 +174,16 @@ export default function MfaEnrollment() {
     }
   }
 
-  async function handleUnenroll() {
+  /**
+   * Turn MFA off — only after a FRESH code proves the admin holds
+   * the authenticator right now (S-6, D-S6-2). A wrong code shows
+   * an error and does NOT unenroll. After a successful unenroll,
+   * mandatory MFA sends the admin back to enrollment on the next
+   * navigation — that is intended, not a lockout: they can
+   * re-enroll immediately.
+   */
+  async function handleUnenroll(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
     if (!factorId) {
       return;
     }
@@ -184,6 +196,21 @@ export default function MfaEnrollment() {
         setError("Supabase is not configured.");
         return;
       }
+      const { data: challenge, error: challengeError } =
+        await supabase.auth.mfa.challenge({ factorId });
+      if (challengeError || !challenge) {
+        setError("Could not check the code. Please try again.");
+        return;
+      }
+      const { error: verifyError } = await supabase.auth.mfa.verify({
+        factorId,
+        challengeId: challenge.id,
+        code: code.trim(),
+      });
+      if (verifyError) {
+        setError("Wrong code. Try again.");
+        return;
+      }
       const { error: unenrollError } = await supabase.auth.mfa.unenroll({
         factorId,
       });
@@ -194,7 +221,9 @@ export default function MfaEnrollment() {
       setSecret(null);
       setUri(null);
       setCode("");
-      setMessage("Two-factor authentication is off.");
+      setMessage(
+        "Two-factor authentication is off. Set it up again to keep using the admin area — the admin area will ask you to set it up on your next visit.",
+      );
       await refreshStatus();
     } catch {
       setError("Could not turn off two-factor authentication. Please try again.");
@@ -250,14 +279,38 @@ export default function MfaEnrollment() {
       ) : null}
 
       {status === "enrolled" ? (
-        <button
-          type="button"
-          disabled={pending}
-          onClick={handleUnenroll}
-          className="min-h-11 rounded-md border border-border bg-surface px-4 py-2 text-base font-semibold text-text hover:bg-background-subtle disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {pending ? "Working…" : "Turn off two-factor authentication"}
-        </button>
+        <form onSubmit={handleUnenroll} className="space-y-4" noValidate>
+          <p className="text-sm text-text-secondary">
+            To turn it off, enter the code from your authenticator app
+            first — turning it off without a code is not allowed.
+          </p>
+          <div>
+            <label
+              htmlFor="mfa-unenroll-code"
+              className="mb-1 block font-semibold text-text"
+            >
+              Code from your authenticator app
+            </label>
+            <input
+              id="mfa-unenroll-code"
+              name="code"
+              type="text"
+              autoComplete="one-time-code"
+              inputMode="numeric"
+              placeholder="123456"
+              value={code}
+              onChange={(event) => setCode(event.target.value)}
+              className={inputClassName}
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={pending}
+            className="min-h-11 rounded-md border border-border bg-surface px-4 py-2 text-base font-semibold text-text hover:bg-background-subtle disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {pending ? "Working…" : "Turn off two-factor authentication"}
+          </button>
+        </form>
       ) : null}
 
       {status === "not-enrolled" && !secret ? (

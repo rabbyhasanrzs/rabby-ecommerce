@@ -14,16 +14,18 @@ import { redirect } from "next/navigation";
  * and redirects logged-out visitors to /admin/login — it is NOT the
  * role gate.
  *
- * MFA RULE: an admin who has enrolled a TOTP factor must complete a
- * second-factor challenge (aal2) before reaching /admin. requireAdmin()
- * enforces it: if the user has a VERIFIED totp factor and their
- * current assurance level is still 'aal1', they are sent back to
- * /admin/login?mfa=1. An admin with no enrolled factor is not forced
- * (enrollment happens from the admin area — see
- * components/admin/mfa-enrollment.tsx — and the owner checklist).
- * If the MFA status cannot be read (network/Auth error), the check
- * is skipped rather than locking the owner out: sign-in itself
- * already enforces MFA (see components/admin/login-actions.ts).
+ * MFA RULE (S-6, D-S6-2 — MFA is MANDATORY for every admin):
+ * an admin must have a VERIFIED totp factor, and must complete a
+ * second-factor challenge (aal2) before reaching /admin.
+ * requireAdmin() enforces it: no verified factor -> the admin is
+ * sent to /admin/mfa-setup?required=1 to enroll; a verified factor
+ * with the current assurance level still 'aal1' -> sent back to
+ * /admin/login?mfa=1 for the code step. If the MFA status cannot
+ * be read (network/Auth error), the check FAILS CLOSED — access is
+ * denied (mfa-required) and the admin lands on the login form,
+ * where signing in again re-reads the factors. Enrollment and
+ * unenrollment live in components/admin/mfa-enrollment.tsx;
+ * unenrolling requires a fresh MFA code first.
  *
  * No service_role key is used anywhere — the anon key + the user's
  * own session cookies are the only credentials, and the admins table
@@ -91,7 +93,11 @@ export async function getAdminUser(
 export type AdminAccess =
   | { status: "ok"; user: User }
   | {
-      status: "unauthenticated" | "forbidden" | "mfa-required";
+      status:
+        | "unauthenticated"
+        | "forbidden"
+        | "mfa-required"
+        | "mfa-missing";
       user: null;
     };
 
@@ -115,20 +121,34 @@ export async function checkAdminAccess(
     return { status: "forbidden", user: null };
   }
 
-  // MFA: only a VERIFIED totp factor counts as "enrolled".
+  // MFA (mandatory, D-S6-2): only a VERIFIED totp factor counts as
+  // "enrolled". No verified factor -> "mfa-missing" (enroll first);
+  // verified factor but still aal1 -> "mfa-required" (code step).
+  // A factors/AAL read failure FAILS CLOSED: deny access rather
+  // than let a password-only session through — the admin lands on
+  // the login form and signing in again re-reads the factors.
   try {
-    const [{ data: factors }, { data: aal }] = await Promise.all([
-      client.auth.mfa.listFactors(),
-      client.auth.mfa.getAuthenticatorAssuranceLevel(),
-    ]);
+    const [{ data: factors, error: factorsError }, { data: aal, error: aalError }] =
+      await Promise.all([
+        client.auth.mfa.listFactors(),
+        client.auth.mfa.getAuthenticatorAssuranceLevel(),
+      ]);
+    if (factorsError || aalError) {
+      return { status: "mfa-required", user: null };
+    }
     const hasVerifiedTotp = (factors?.totp ?? []).some(
       (factor: { status: string }) => factor.status === "verified",
     );
-    if (hasVerifiedTotp && aal?.currentLevel === "aal1") {
+    if (!hasVerifiedTotp) {
+      return { status: "mfa-missing", user: null };
+    }
+    if (aal?.currentLevel === "aal1") {
       return { status: "mfa-required", user: null };
     }
   } catch {
-    // MFA status unreadable — skip the check (sign-in enforces MFA).
+    // MFA status unreadable (thrown, not an error field) — fail
+    // closed, same as an error field above.
+    return { status: "mfa-required", user: null };
   }
 
   return { status: "ok", user };
@@ -163,7 +183,9 @@ export async function requireAdmin(
         ? "/admin/login"
         : access.status === "forbidden"
           ? "/admin/login?error=forbidden"
-          : "/admin/login?mfa=1";
+          : access.status === "mfa-missing"
+            ? "/admin/mfa-setup?required=1"
+            : "/admin/login?mfa=1";
     redirect(url);
     // redirect() throws in Next.js, but its type does not say so —
     // the throw below keeps TypeScript (and any non-Next runtime)

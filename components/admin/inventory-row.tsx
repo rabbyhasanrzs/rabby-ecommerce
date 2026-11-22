@@ -1,5 +1,7 @@
 "use client";
 
+import { getSessionTimeoutKind } from "@/lib/admin-session";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 /**
@@ -19,6 +21,7 @@ export default function InventoryRow({
   colour: string | null;
   stockTotal: number;
 }) {
+  const router = useRouter();
   const [stock, setStock] = useState(String(stockTotal));
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -45,6 +48,16 @@ export default function InventoryRow({
         body: JSON.stringify({ productId, stockTotal: value }),
       });
       const json: { ok?: boolean; error?: string } = await res.json();
+      // Timed out (S-6 follow-up, D-S6-1): the proxy answered 401
+      // with a session kind — go to login with its message instead
+      // of showing a save error.
+      if (res.status === 401) {
+        const kind = getSessionTimeoutKind(json);
+        if (kind) {
+          router.push(`/admin/login?session=${kind}`);
+          return;
+        }
+      }
       if (!res.ok || !json.ok) {
         setError(json.error ?? "Stock could not be saved.");
         return;

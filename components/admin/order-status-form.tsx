@@ -1,14 +1,16 @@
 "use client";
 
+import { getSessionTimeoutKind } from "@/lib/admin-session";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 /**
- * Order status update (S-4, T-46) — dropdown of the allowed next
- * statuses for this order + an optional note. On Cancel the note is
- * the cancel reason, so it is required. After a successful update
- * the page refreshes and the customer timeline (which reads
- * order_status_events) shows the new status.
+ * Order status update (S-4, T-46; free movement S-6 follow-up,
+ * D-S6-3) — dropdown of the allowed target statuses for this order
+ * + an optional note. On Cancel the note is the cancel reason, so
+ * it is required. After a successful update the page refreshes and
+ * the customer timeline (which reads order_status_events) shows the
+ * new status.
  */
 export default function OrderStatusForm({
   reference,
@@ -68,6 +70,16 @@ export default function OrderStatusForm({
         body: JSON.stringify({ status, note: note.trim() || null }),
       });
       const json: { ok?: boolean; error?: string } = await res.json();
+      // Timed out (S-6 follow-up, D-S6-1): the proxy answered 401
+      // with a session kind — go to login with its message instead
+      // of showing an update error.
+      if (res.status === 401) {
+        const kind = getSessionTimeoutKind(json);
+        if (kind) {
+          router.push(`/admin/login?session=${kind}`);
+          return;
+        }
+      }
       if (!res.ok || !json.ok) {
         setError(json.error ?? "The status could not be updated.");
         return;

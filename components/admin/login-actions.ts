@@ -1,12 +1,18 @@
 "use server";
 
 import {
+  ADMIN_SESSION_COOKIE_NAME,
+  ADMIN_SESSION_COOKIE_OPTIONS,
+  buildAdminSessionValue,
+  serializeAdminSessionValue,
+} from "@/lib/admin-session";
+import {
   LOGIN_RATE_LIMIT,
   LOGIN_RATE_WINDOW_MS,
   checkRateLimit,
 } from "@/lib/rate-limit";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 /**
@@ -45,6 +51,22 @@ export interface SignInResult {
 const WRONG_CREDENTIALS = "Wrong email or password.";
 const RATE_LIMIT_ERROR =
   "Too many attempts. Please try again in a few minutes.";
+
+/**
+ * Set the admin-session cookie (S-6 follow-up, D-S6-1). The clock
+ * starts at successful sign-in — call this only once sign-in is
+ * complete, in BOTH completion paths (direct and after the MFA
+ * code), and BEFORE redirect() (which throws). It is NOT set on the
+ * needsMfa return: MFA is not complete yet, and the MFA step must
+ * not stretch the clock into a longer session than intended.
+ */
+async function setAdminSessionCookie(): Promise<void> {
+  (await cookies()).set(
+    ADMIN_SESSION_COOKIE_NAME,
+    serializeAdminSessionValue(buildAdminSessionValue(Date.now())),
+    ADMIN_SESSION_COOKIE_OPTIONS,
+  );
+}
 
 /**
  * Best-effort client identity for the login rate-limit key: the
@@ -116,6 +138,7 @@ export async function signInAction(
     }
   }
 
+  await setAdminSessionCookie();
   redirect("/admin");
 }
 
@@ -154,5 +177,6 @@ export async function verifyMfaAction(
     return { ok: false, error: "Wrong code. Try again." };
   }
 
+  await setAdminSessionCookie();
   redirect("/admin");
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import { getSessionTimeoutKind } from "@/lib/admin-session";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -14,12 +15,24 @@ export default function SignOutButton() {
 
   async function handleSignOut() {
     setSigningOut(true);
+    let loginUrl = "/admin/login";
     try {
-      await fetch("/api/admin/sign-out", { method: "POST" });
+      const res = await fetch("/api/admin/sign-out", { method: "POST" });
+      // Timed out already (S-6 follow-up, D-S6-1): the proxy cleared
+      // the session and answered 401 — carry its plain-words message
+      // through to the login page instead of a bare redirect.
+      if (res.status === 401) {
+        const kind = getSessionTimeoutKind(
+          await res.json().catch(() => ({})),
+        );
+        if (kind) {
+          loginUrl = `/admin/login?session=${kind}`;
+        }
+      }
     } catch {
       // Even if the request fails, leave the admin area.
     }
-    router.push("/admin/login");
+    router.push(loginUrl);
     router.refresh();
   }
 
