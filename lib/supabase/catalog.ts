@@ -243,20 +243,41 @@ function toProductSummary(row: ProductRow): ProductSummary {
   };
 }
 
+/**
+ * Active categories that have at least one active product (S-4, T-43).
+ *
+ * Rule (Phase 05 / FR-12): a category appears in storefront
+ * navigation only with ≥1 product. The old version returned every
+ * active category, so an empty category showed up in the listing
+ * filter with zero products behind it. The change is minimal: one
+ * extra read of active products' category_ids, then a filter in
+ * memory. A category with products that are all inactive (or none
+ * at all) is left out until it has an active product.
+ */
 export async function listCategories(): Promise<Category[]> {
   const supabase = getSupabaseClient();
   if (!supabase) {
     throw new CatalogueUnavailableError();
   }
-  const { data, error } = await supabase
-    .from("categories")
-    .select("id,slug,name,sort_order")
-    .eq("is_active", true)
-    .order("sort_order", { ascending: true });
-  if (error || !data) {
+  const [{ data, error }, productsRes] = await Promise.all([
+    supabase
+      .from("categories")
+      .select("id,slug,name,sort_order")
+      .eq("is_active", true)
+      .order("sort_order", { ascending: true }),
+    supabase.from("products").select("category_id").eq("status", "active"),
+  ]);
+  if (error || !data || productsRes.error || !productsRes.data) {
     throw new CatalogueUnavailableError();
   }
-  return data as Category[];
+  const withProducts = new Set(
+    (productsRes.data as { category_id: string | null }[])
+      .map((row) => row.category_id)
+      .filter((id): id is string => id !== null),
+  );
+  return (data as Category[]).filter((category) =>
+    withProducts.has(category.id),
+  );
 }
 
 export async function listProducts(

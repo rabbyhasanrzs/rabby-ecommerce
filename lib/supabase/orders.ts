@@ -204,6 +204,12 @@ function mapCreateOrderError(error: { message?: string }): GuestOrderError | nul
       message.slice("product_not_found:".length),
     );
   }
+  if (message.startsWith("payment_method_disabled")) {
+    return new GuestOrderError(
+      "VALIDATION",
+      "This payment method is currently unavailable. Please choose another.",
+    );
+  }
   if (message.startsWith("invalid_")) {
     return new GuestOrderError(
       "VALIDATION",
