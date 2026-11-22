@@ -8,6 +8,7 @@ import {
 } from "@/lib/admin-analytics";
 import { formatPriceBdt } from "@/lib/format";
 import { requireAdmin } from "@/lib/supabase/admin";
+import { connection } from "next/server";
 
 /**
  * Admin Sales & Revenue page — Slice C (S-4, T-49).
@@ -169,6 +170,14 @@ export default async function AdminAnalyticsPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  // Request-time rendering first: requireAdmin() reads the session
+  // with supabase.auth.getUser(), and @supabase/auth-js checks the
+  // token expiry with Date.now() on every such call — Next 16 (Cache
+  // Components) flags that as an unstable value during prerendering
+  // ("Route ... encountered the unstable value `Date.now()` while
+  // prerendering"). Every other admin page already does this; this
+  // page was the only one missing it (with Settings).
+  await connection();
   await requireAdmin();
   const days = parsePeriod((await searchParams).days);
 

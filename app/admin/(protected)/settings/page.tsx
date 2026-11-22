@@ -5,6 +5,7 @@ import SettingsForm, {
 import { getSiteSettings } from "@/lib/site-settings";
 import { createAdminClient, requireAdmin } from "@/lib/supabase/admin";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { connection } from "next/server";
 
 /**
  * Admin Settings page — Slice C (S-4, T-48).
@@ -19,6 +20,14 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  * crashing the page; the settings form itself shows the values.
  */
 export default async function AdminSettingsPage() {
+  // Request-time rendering first: requireAdmin() reads the session
+  // with supabase.auth.getUser(), and @supabase/auth-js checks the
+  // token expiry with Date.now() on every such call — Next 16 (Cache
+  // Components) flags that as an unstable value during prerendering
+  // ("Route ... encountered the unstable value `Date.now()` while
+  // prerendering"). Every other admin page already does this; this
+  // page was the only one missing it (with Analytics).
+  await connection();
   await requireAdmin();
 
   const settings = await getSiteSettings();

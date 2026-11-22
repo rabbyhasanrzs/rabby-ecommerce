@@ -2,6 +2,7 @@ import SignOutButton from "@/components/admin/sign-out-button";
 import { requireAdmin } from "@/app/admin/(protected)/admin-data";
 import type { Metadata } from "next";
 import Link from "next/link";
+import { connection } from "next/server";
 
 /** S-6, T-61, S6-10: the whole admin area is noindex. */
 export const metadata: Metadata = {
@@ -29,6 +30,21 @@ export const metadata: Metadata = {
  * The admin area is hidden from customers: there is no Admin link in
  * the storefront header or footer; /admin is reached only by typing
  * the URL. "Back to store" below is the way out.
+ *
+ * `await connection()` FIRST, before requireAdmin(): Next 16 (Cache
+ * Components) patches the global Date during prerendering and flags
+ * every `Date.now()` as an unstable value ("Route ... encountered the
+ * unstable value `Date.now()` while prerendering"). requireAdmin()
+ * reads the session with supabase.auth.getUser(), and @supabase/auth-js
+ * checks the token expiry with Date.now() on every such call — so
+ * without connection() the shell render logs that error on every
+ * /admin request (the pages still render: Next falls back to a dynamic
+ * render after aborting the shell). connection() forces request-time
+ * rendering for the whole admin subtree, so the session read happens
+ * in the dynamic stage where Date.now() is allowed. The pages' own
+ * connection() calls come too late — they run inside Suspense-wrapped
+ * content, after this layout. Do not remove this line without also
+ * removing the admin gate's Date.now() dependency.
  */
 export const instant = false;
 
@@ -48,6 +64,10 @@ export default async function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
+  // Request-time rendering first (see the comment above): the gate's
+  // session read calls Date.now() via @supabase/auth-js, which Next 16
+  // flags as an unstable value during the shell render.
+  await connection();
   await requireAdmin();
 
   return (
