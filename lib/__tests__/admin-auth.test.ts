@@ -181,4 +181,24 @@ describe("requireAdmin", () => {
     const user = await requireAdmin(mockClient({}));
     expect(user.id).toBe("user-1");
   });
+
+  it("redirects to /admin/login when Supabase is not configured", async () => {
+    // No client passed and no env vars: this is the CI-build case
+    // (a prerender with no Supabase config) — it must redirect like
+    // a logged-out visit, not throw "Supabase is not configured".
+    const savedUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const savedKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+    delete process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    try {
+      await expect(requireAdmin()).rejects.toThrow(
+        "REDIRECT:/admin/login",
+      );
+    } finally {
+      if (savedUrl !== undefined)
+        process.env.NEXT_PUBLIC_SUPABASE_URL = savedUrl;
+      if (savedKey !== undefined)
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = savedKey;
+    }
+  });
 });

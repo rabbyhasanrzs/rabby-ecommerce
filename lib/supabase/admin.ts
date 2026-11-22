@@ -143,6 +143,18 @@ export async function checkAdminAccess(
 export async function requireAdmin(
   client?: SupabaseClient,
 ): Promise<User> {
+  if (!client && !getSupabaseAdminEnv()) {
+    // Supabase is not configured (e.g. a build with no env vars, like
+    // CI): nobody can be signed in, so this is exactly a logged-out
+    // visit — redirect to the login page instead of throwing during
+    // prerender, which would fail the build. At runtime the vars are
+    // always set (Vercel), so this path never triggers there.
+    redirect("/admin/login");
+    // redirect() throws in Next.js, but its type does not say so — the
+    // throw below keeps TypeScript (and any non-Next runtime) from
+    // falling through with no user.
+    throw new Error("Admin redirect failed");
+  }
   const supabase = client ?? (await createAdminClient());
   const access = await checkAdminAccess(supabase);
   if (access.status !== "ok") {
