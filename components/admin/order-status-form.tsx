@@ -22,11 +22,31 @@ export default function OrderStatusForm({
   statusLabels: Record<string, string>;
 }) {
   const router = useRouter();
-  const [status, setStatus] = useState(allowedStatuses[0] ?? "");
   const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  /**
+   * After a successful update the page refreshes (router.refresh())
+   * with a new allowedStatuses list for the new current status, but
+   * useState does not re-initialise — without this sync the form
+   * keeps submitting the old status, so the second update in a row
+   * (e.g. Processing -> Packed) silently re-saves the old status
+   * and only a full page reload fixed it. This is the documented
+   * "adjusting state when a prop changes" pattern: the state is
+   * adjusted during render, not in an effect, so no cascading
+   * render. The parent is a server component, so this prop identity
+   * only changes when the order's status actually changes — typing
+   * in the note field does not reset the selection.
+   */
+  const [status, setStatus] = useState(allowedStatuses[0] ?? "");
+  const [prevAllowedStatuses, setPrevAllowedStatuses] =
+    useState(allowedStatuses);
+  if (allowedStatuses !== prevAllowedStatuses) {
+    setPrevAllowedStatuses(allowedStatuses);
+    setStatus(allowedStatuses[0] ?? "");
+  }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
