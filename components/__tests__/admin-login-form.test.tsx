@@ -254,4 +254,24 @@ describe("LoginForm", () => {
     expect(passwordInput).toHaveAttribute("type", "password");
     expect(passwordInput).toHaveValue("secret-123");
   });
+
+  it("shows a Forgot password? link to the reset page", () => {
+    render(<LoginForm />);
+
+    expect(
+      screen.getByRole("link", { name: "Forgot password?" }),
+    ).toHaveAttribute("href", "/admin/forgot-password");
+  });
+
+  it("shows the password-changed message after a reset", () => {
+    render(
+      <LoginForm resetMessage="Your password has been changed. Sign in with your new password." />,
+    );
+
+    expect(
+      screen.getByText(
+        "Your password has been changed. Sign in with your new password.",
+      ),
+    ).toBeInTheDocument();
+  });
 });

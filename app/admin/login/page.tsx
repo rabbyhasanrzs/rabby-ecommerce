@@ -32,7 +32,12 @@ export const instant = false;
 export default async function AdminLoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; mfa?: string; session?: string }>;
+  searchParams: Promise<{
+    error?: string;
+    mfa?: string;
+    session?: string;
+    reset?: string;
+  }>;
 }) {
   const params = await searchParams;
 
@@ -64,6 +69,11 @@ export default async function AdminLoginPage({
           }
           mfaHint={params.mfa === "1"}
           sessionMessage={getSessionTimeoutMessage(params.session)}
+          resetMessage={
+            params.reset === "1"
+              ? "Your password has been changed. Sign in with your new password."
+              : null
+          }
         />
       </div>
     </main>

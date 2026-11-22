@@ -43,6 +43,7 @@ export default function LoginForm({
   initialError,
   mfaHint,
   sessionMessage,
+  resetMessage,
 }: {
   /** Shown when redirected here by requireAdmin() (non-admin). */
   initialError?: string | null;
@@ -54,6 +55,11 @@ export default function LoginForm({
    * this is information, not a sign-in failure.
    */
   sessionMessage?: string | null;
+  /**
+   * Plain-words confirmation after a password reset
+   * (?reset=1). Same information slot as the timeout message.
+   */
+  resetMessage?: string | null;
 }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -136,6 +142,11 @@ export default function LoginForm({
       {sessionMessage && !factorId ? (
         <p className="mt-3 rounded-md border border-border bg-background-subtle px-3 py-2 text-sm text-text">
           {sessionMessage}
+        </p>
+      ) : null}
+      {resetMessage && !factorId ? (
+        <p className="mt-3 rounded-md border border-border bg-background-subtle px-3 py-2 text-sm text-text">
+          {resetMessage}
         </p>
       ) : null}
       {error ? (
@@ -273,6 +284,14 @@ export default function LoginForm({
                 )}
               </button>
             </div>
+          </div>
+          <div className="text-right">
+            <a
+              href="/admin/forgot-password"
+              className="text-sm font-semibold text-text-secondary hover:text-action"
+            >
+              Forgot password?
+            </a>
           </div>
           <button
             type="submit"
