@@ -1,0 +1,49 @@
+-- ==========================================================================
+-- 0008 — S-6 health check fix (Postgres 42501 on production)
+-- ==========================================================================
+-- Run this in the Supabase SQL Editor. Re-run safe (GRANT is idempotent).
+-- NOTE: the production run is ALREADY DONE — the owner ran this on the
+-- production project (My_Business_One, ref usoqvlvexkresyeydxvy) on
+-- 2026-11-23 ~03:40 +06, and production /api/health now returns 200.
+-- This file is the record of that fix, so the repo stays the source of
+-- truth. Run it on the TEST project too for parity if it has not been
+-- run there already (the TEST project already answers the check, so
+-- this only re-asserts the grant there).
+--
+-- What happened: after PR #32 merged, the new public GET /api/health
+-- route returned 503 {"status":"degraded","db":"error"} on production
+-- while staging returned 200 {"status":"ok","db":"ok"}. The route
+-- reads the site_settings table as anon to prove the database
+-- answers. Migration 0005 gave site_settings an anon RLS SELECT
+-- policy (site_settings_select_public, USING (true)) but never the
+-- table-level SELECT privilege: migration 0001 granted anon SELECT on
+-- the catalogue tables only, and migration 0007 granted site_settings
+-- to authenticated only. Postgres needs BOTH: the GRANT decides
+-- whether the role may touch the table at all, the RLS policy decides
+-- which rows. With no GRANT, the anon read fails with 42501 before
+-- RLS is even consulted — the same bug class as the inventory save
+-- fix in 0007.
+--
+-- Why only production failed: the TEST project already carries this
+-- grant (drifted grants, same as noted in 0007's header — the
+-- mechanism of that drift is not recorded), so staging's anon read
+-- worked. Production is a clean migration run, so the missing grant
+-- showed up there.
+--
+-- Side effect worth knowing: production GET /api/settings was also
+-- silently falling back to the DEMO CONFIG defaults on the same
+-- missing grant — nobody noticed because the fallback values are
+-- identical to the seeded row. With this grant, the public settings
+-- read returns the real row again.
+--
+-- What this does NOT do: it grants SELECT only, to anon only, on
+-- site_settings only — a public config table whose single row is
+-- already readable by design (the anon RLS policy has allowed it
+-- since 0005). No write privileges, nothing on orders, order_items,
+-- payments, server_secrets or admins. The RLS policy remains the
+-- gate for which rows anon may see.
+-- ==========================================================================
+
+-- Public settings read: the storefront, GET /api/settings and
+-- GET /api/health all read site_settings as anon.
+GRANT SELECT ON public.site_settings TO anon;
