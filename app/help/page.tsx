@@ -1,10 +1,13 @@
-import PlaceholderPage from "@/components/placeholder-page";
+import ContentPage from "@/components/content-page";
+import HelpFaq from "@/components/help-faq";
 
 export default function HelpPage() {
   return (
-    <PlaceholderPage
+    <ContentPage
       title="Help & FAQ"
-      description="Help and FAQ land in S-5. Support channels are decided: WhatsApp (primary), Facebook Messenger (secondary), Phone, Email — configurable links, demo placeholders until the owner provides verified contact details."
-    />
+      intro="Answers to the questions buyers ask before paying — delivery, payment, returns, stock and fit. Delivery and tax figures are demo configuration until the owner confirms the real values."
+    >
+      <HelpFaq />
+    </ContentPage>
   );
 }

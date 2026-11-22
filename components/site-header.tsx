@@ -4,7 +4,12 @@ import Link from "next/link";
 
 const NAV_LINKS = [
   { href: "/sunglasses", label: "Sunglasses" },
-  { href: "/sunglasses?view=new-arrivals", label: "New Arrivals" },
+  // S-5: the listing has a `sort` param but no `view` param — the old
+  // `?view=new-arrivals` link silently showed the default sort. Point
+  // at the real newest sort. Best Sellers keeps `?view=best-sellers`
+  // (no sales-based ordering exists in the catalogue layer yet — known
+  // gap, recorded in the S-5 PR body; the link still loads the listing).
+  { href: "/sunglasses?sort=newest", label: "New Arrivals" },
   { href: "/sunglasses?view=best-sellers", label: "Best Sellers" },
   { href: "/help", label: "Help" },
 ] as const;
