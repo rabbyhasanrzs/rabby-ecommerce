@@ -22,11 +22,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  * Coordinator fix (assembly): vitest-axe 0.1.0 augments the old `Vi`
  * namespace, which Vitest 4 no longer uses for `Assertion` — so
  * `toHaveNoViolations()` type-checked as missing even though the
- * runtime matcher (registered below via expect.extend) works. This
- * is the documented Vitest custom-matcher augmentation.
+ * runtime matcher (registered below via expect.extend) works.
+ *
+ * This is vitest-axe's documented empty-interface augmentation.
+ * The three disabled rules are deliberate, not sloppy: the type
+ * parameter must match vitest's `Assertion<T = any>` exactly or
+ * tsc fails with TS2428, and the matcher methods come from
+ * `AxeMatchers`, so the interfaces declare no members of their own.
  */
 declare module "vitest" {
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars
   interface Assertion<T = any> extends AxeMatchers {}
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   interface AsymmetricMatchersContaining extends AxeMatchers {}
 }
 
