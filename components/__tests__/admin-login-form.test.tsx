@@ -234,4 +234,44 @@ describe("LoginForm", () => {
     });
     expect(screen.queryByLabelText("Verification code")).not.toBeInTheDocument();
   });
+
+  it("shows the password when the eye toggle is clicked, and hides it again", () => {
+    render(<LoginForm />);
+
+    const passwordInput = screen.getByLabelText("Password");
+    fireEvent.change(passwordInput, { target: { value: "secret-123" } });
+
+    expect(passwordInput).toHaveAttribute("type", "password");
+
+    fireEvent.click(screen.getByRole("button", { name: "Show password" }));
+    expect(passwordInput).toHaveAttribute("type", "text");
+    expect(passwordInput).toHaveValue("secret-123");
+    expect(
+      screen.getByRole("button", { name: "Hide password" }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Hide password" }));
+    expect(passwordInput).toHaveAttribute("type", "password");
+    expect(passwordInput).toHaveValue("secret-123");
+  });
+
+  it("shows a Forgot password? link to the reset page", () => {
+    render(<LoginForm />);
+
+    expect(
+      screen.getByRole("link", { name: "Forgot password?" }),
+    ).toHaveAttribute("href", "/admin/forgot-password");
+  });
+
+  it("shows the password-changed message after a reset", () => {
+    render(
+      <LoginForm resetMessage="Your password has been changed. Sign in with your new password." />,
+    );
+
+    expect(
+      screen.getByText(
+        "Your password has been changed. Sign in with your new password.",
+      ),
+    ).toBeInTheDocument();
+  });
 });

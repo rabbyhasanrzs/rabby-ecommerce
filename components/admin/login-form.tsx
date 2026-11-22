@@ -43,6 +43,7 @@ export default function LoginForm({
   initialError,
   mfaHint,
   sessionMessage,
+  resetMessage,
 }: {
   /** Shown when redirected here by requireAdmin() (non-admin). */
   initialError?: string | null;
@@ -54,9 +55,15 @@ export default function LoginForm({
    * this is information, not a sign-in failure.
    */
   sessionMessage?: string | null;
+  /**
+   * Plain-words confirmation after a password reset
+   * (?reset=1). Same information slot as the timeout message.
+   */
+  resetMessage?: string | null;
 }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [code, setCode] = useState("");
   const [factorId, setFactorId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(initialError ?? null);
@@ -135,6 +142,11 @@ export default function LoginForm({
       {sessionMessage && !factorId ? (
         <p className="mt-3 rounded-md border border-border bg-background-subtle px-3 py-2 text-sm text-text">
           {sessionMessage}
+        </p>
+      ) : null}
+      {resetMessage && !factorId ? (
+        <p className="mt-3 rounded-md border border-border bg-background-subtle px-3 py-2 text-sm text-text">
+          {resetMessage}
         </p>
       ) : null}
       {error ? (
@@ -221,15 +233,65 @@ export default function LoginForm({
             >
               Password
             </label>
-            <input
-              id="admin-password"
-              name="password"
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              className={inputClassName}
-            />
+            <div className="relative">
+              <input
+                id="admin-password"
+                name="password"
+                type={showPassword ? "text" : "password"}
+                autoComplete="current-password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                className={`${inputClassName} pr-11`}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((value) => !value)}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                aria-pressed={showPassword}
+                className="absolute right-1 top-1/2 flex min-h-11 min-w-11 -translate-y-1/2 items-center justify-center rounded-md text-text-secondary hover:text-action"
+              >
+                {showPassword ? (
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+                    <circle cx="12" cy="12" r="3" />
+                    <line x1="4" y1="4" x2="20" y2="20" />
+                  </svg>
+                ) : (
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                )}
+              </button>
+            </div>
+          </div>
+          <div className="text-right">
+            <a
+              href="/admin/forgot-password"
+              className="text-sm font-semibold text-text-secondary hover:text-action"
+            >
+              Forgot password?
+            </a>
           </div>
           <button
             type="submit"
