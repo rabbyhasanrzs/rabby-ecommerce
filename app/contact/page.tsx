@@ -1,10 +1,13 @@
-import PlaceholderPage from "@/components/placeholder-page";
+import ContactChannels from "@/components/contact-channels";
+import ContentPage from "@/components/content-page";
 
 export default function ContactPage() {
   return (
-    <PlaceholderPage
+    <ContentPage
       title="Contact"
-      description="Contact lands in S-5. Support channels are decided: WhatsApp (primary), Facebook Messenger (secondary), Phone, Email — configurable links, demo placeholders until the owner provides verified contact details."
-    />
+      intro="How to reach Rabby. Only verified contact details are shown here — a channel with no detail yet is labelled as not provided."
+    >
+      <ContactChannels />
+    </ContentPage>
   );
 }

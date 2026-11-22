@@ -30,13 +30,15 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^5.2.0",
+    "axe-core": "^4.14.1",
     "eslint": "^9",
     "eslint-config-next": "16.4.6",
     "jsdom": "^31.0.1",
     "tailwindcss": "4.3.3",
     "typescript": "^5",
     "vite": "^6.4.6",
-    "vitest": "^4.1.12"
+    "vitest": "^4.1.12",
+    "vitest-axe": "^0.1.0"
   },
   "allowScripts": {
     "esbuild@0.25.12": true

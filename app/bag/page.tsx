@@ -153,11 +153,11 @@ export default function BagPage() {
       </h1>
 
       {empty ? (
-        <div className="mt-8">
+        <div className="mt-8 rounded-lg border border-border bg-surface p-6 shadow-sm md:p-8">
           <p className="text-base text-text-secondary">Your bag is empty.</p>
           <Link
             href="/sunglasses"
-            className="mt-4 inline-flex min-h-11 items-center justify-center rounded-md bg-action px-4 py-3 text-base font-semibold text-text-inverse hover:bg-action-hover"
+            className="mt-4 inline-flex min-h-11 items-center justify-center rounded-md bg-action px-4 py-3 text-base font-semibold text-text-inverse transition-colors hover:bg-action-hover active:bg-action-active"
           >
             Continue Shopping
           </Link>
@@ -181,7 +181,7 @@ export default function BagPage() {
               </ul>
             ) : null}
 
-            <ul className="divide-y divide-border border-y border-border">
+            <ul className="divide-y divide-border rounded-lg border border-border bg-surface px-6 shadow-sm">
               {lines.map(({ item, priceBdt, stockTotal }) => (
                 <li
                   key={`${item.slug}:${item.variantColour ?? ""}`}
@@ -225,7 +225,7 @@ export default function BagPage() {
                         }
                         disabled={item.quantity <= 1}
                         aria-label={`Decrease quantity of ${item.name}`}
-                        className="flex h-11 w-11 items-center justify-center rounded-md border border-border text-lg font-semibold text-text hover:border-action disabled:cursor-not-allowed disabled:opacity-50"
+                        className="flex h-11 w-11 items-center justify-center rounded-md border border-border text-lg font-semibold text-text transition-colors hover:border-action disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         −
                       </button>
@@ -251,7 +251,7 @@ export default function BagPage() {
                           item.quantity >= stockTotal
                         }
                         aria-label={`Increase quantity of ${item.name}`}
-                        className="flex h-11 w-11 items-center justify-center rounded-md border border-border text-lg font-semibold text-text hover:border-action disabled:cursor-not-allowed disabled:opacity-50"
+                        className="flex h-11 w-11 items-center justify-center rounded-md border border-border text-lg font-semibold text-text transition-colors hover:border-action disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         +
                       </button>
@@ -262,7 +262,7 @@ export default function BagPage() {
                         removeItem(item.slug, item.variantColour)
                       }
                       aria-label={`Remove ${item.name} from bag`}
-                      className="mt-2 min-h-11 text-base text-error underline hover:text-text"
+                      className="mt-2 min-h-11 text-base text-error underline transition-colors hover:text-text"
                     >
                       Remove
                     </button>
@@ -276,7 +276,7 @@ export default function BagPage() {
 
             <Link
               href="/sunglasses"
-              className="mt-6 inline-flex min-h-11 items-center justify-center rounded-md border border-border px-4 py-3 text-base font-semibold text-text hover:border-action"
+              className="mt-6 inline-flex min-h-11 items-center justify-center rounded-md border border-border bg-surface px-4 py-3 text-base font-semibold text-text transition-colors hover:border-action"
             >
               Continue Shopping
             </Link>
@@ -284,7 +284,7 @@ export default function BagPage() {
 
           <aside
             aria-label="Order summary"
-            className="h-fit rounded-lg border border-border bg-surface p-6"
+            className="h-fit rounded-lg border border-border bg-surface p-6 shadow-sm"
           >
             <h2 className="font-display text-2xl font-bold text-text">
               Summary
@@ -329,7 +329,7 @@ export default function BagPage() {
             ) : (
               <Link
                 href="/checkout"
-                className="mt-6 flex min-h-11 items-center justify-center rounded-md bg-action px-4 py-3 text-base font-semibold text-text-inverse hover:bg-action-hover"
+                className="mt-6 flex min-h-11 items-center justify-center rounded-md bg-action px-4 py-3 text-base font-semibold text-text-inverse transition-colors hover:bg-action-hover active:bg-action-active"
               >
                 Checkout
               </Link>

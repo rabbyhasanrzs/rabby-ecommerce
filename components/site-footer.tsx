@@ -2,9 +2,12 @@ import CopyrightYear from "@/components/copyright-year";
 import Link from "next/link";
 
 const SHOP_LINKS = [
-  { href: "/sunglasses", label: "Sunglasses" },
-  { href: "/sunglasses?view=new-arrivals", label: "New Arrivals" },
+  { href: "/sunglasses", label: "All Sunglasses" },
+  { href: "/sunglasses?sort=newest", label: "New Arrivals" },
   { href: "/sunglasses?view=best-sellers", label: "Best Sellers" },
+  { href: "/sunglasses?category=men", label: "Men" },
+  { href: "/sunglasses?category=women", label: "Women" },
+  { href: "/sunglasses?category=polarized", label: "Polarized" },
   { href: "/orders", label: "Track Order" },
 ] as const;
 
@@ -38,7 +41,7 @@ export default function SiteFooter() {
               <li key={link.href}>
                 <Link
                   href={link.href}
-                  className="text-base text-text-secondary hover:text-action"
+                  className="text-base text-text-secondary hover:text-action hover:underline"
                 >
                   {link.label}
                 </Link>
@@ -54,7 +57,7 @@ export default function SiteFooter() {
               <li key={link.href}>
                 <Link
                   href={link.href}
-                  className="text-base text-text-secondary hover:text-action"
+                  className="text-base text-text-secondary hover:text-action hover:underline"
                 >
                   {link.label}
                 </Link>
@@ -70,7 +73,7 @@ export default function SiteFooter() {
               <li key={link.href}>
                 <Link
                   href={link.href}
-                  className="text-base text-text-secondary hover:text-action"
+                  className="text-base text-text-secondary hover:text-action hover:underline"
                 >
                   {link.label}
                 </Link>
@@ -83,7 +86,16 @@ export default function SiteFooter() {
           <h2 className="mb-4 text-base font-semibold text-text">Contact</h2>
           <p className="text-base leading-relaxed text-text-secondary">
             Contact details — demo placeholder. WhatsApp, Messenger, phone,
-            and email links coming in S-5.
+            and email links will appear here once the owner provides
+            verified details.
+          </p>
+          <p className="mt-2">
+            <Link
+              href="/contact"
+              className="text-base font-semibold text-action hover:underline"
+            >
+              Contact page
+            </Link>
           </p>
         </div>
       </div>

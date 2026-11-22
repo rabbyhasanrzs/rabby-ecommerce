@@ -534,7 +534,7 @@ export default function CheckoutForm() {
               return (
                 <label
                   key={optionZone}
-                  className="flex min-h-11 cursor-pointer items-center gap-3 rounded-md border border-border bg-surface px-3 py-2"
+                  className="flex min-h-11 cursor-pointer items-center gap-3 rounded-md border border-border bg-surface px-3 py-2 transition-colors hover:border-border-strong"
                 >
                   <input
                     ref={index === 0 ? zoneRef : undefined}
@@ -588,7 +588,7 @@ export default function CheckoutForm() {
                   {groupMethods.map((method, index) => (
                   <label
                     key={method.id}
-                    className="flex min-h-11 cursor-pointer items-center gap-3 rounded-md border border-border bg-surface px-3 py-2"
+                    className="flex min-h-11 cursor-pointer items-center gap-3 rounded-md border border-border bg-surface px-3 py-2 transition-colors hover:border-border-strong"
                   >
                     <input
                       ref={
@@ -709,7 +709,7 @@ export default function CheckoutForm() {
 
       <section
         aria-label="Order summary"
-        className="rounded-lg border border-border bg-surface p-4"
+        className="rounded-lg border border-border bg-surface p-6 shadow-sm"
       >
         <h2 className="font-display text-xl font-bold text-text">
           Order summary
@@ -757,7 +757,7 @@ export default function CheckoutForm() {
       <button
         type="submit"
         disabled={submitting}
-        className="min-h-11 w-full rounded-md bg-action px-6 py-3 text-base font-semibold text-text-inverse hover:bg-action-hover disabled:cursor-not-allowed disabled:opacity-50"
+        className="min-h-11 w-full rounded-md bg-action px-6 py-3 text-base font-semibold text-text-inverse transition-colors hover:bg-action-hover active:bg-action-active disabled:cursor-not-allowed disabled:opacity-50"
       >
         {submitting ? "Placing your order…" : "Place Order"}
       </button>

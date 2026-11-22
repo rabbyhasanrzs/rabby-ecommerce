@@ -8,16 +8,24 @@ import Link from "next/link";
  * "Photo coming soon" placeholder), name, integer BDT price, and stock
  * in plain words. Out-of-stock cards show "Out of Stock" and no
  * add-to-bag control — S-1 has no bag/checkout (S-2).
+ *
+ * Polish (S-5, prototype parity): subtle shadow + hover lift, with a
+ * very slight image scale on hover (§6.1 — hover never hides the
+ * name, price, or stock). Focus is visible via the focus-within ring
+ * on the card plus the global :focus-visible outline on the link.
+ * Deviation recorded in the S-5 PR: Phase 06A §1.4 says cards are
+ * separated "not by shadows"; the owner-approved prototype has subtle
+ * card shadows, and the standing instruction is prototype parity.
  */
 export default function ProductCard({ product }: { product: ProductSummary }) {
   const outOfStock = product.stock_total <= 0;
   return (
-    <li className="overflow-hidden rounded-lg border border-border bg-surface">
+    <li className="group overflow-hidden rounded-lg border border-border bg-surface shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:border-border-strong hover:shadow-md focus-within:shadow-md focus-within:ring-2 focus-within:ring-focus">
       <Link href={`/product/${product.slug}`} className="block">
         <ProductImage
           src={product.primary_image}
           alt={product.name}
-          className="aspect-[4/3] w-full object-cover"
+          className="aspect-[4/3] w-full object-cover transition-transform duration-150 group-hover:scale-[1.02]"
         />
         <span className="block px-4 pt-4">
           <span className="block font-display text-lg font-bold leading-snug text-text">
