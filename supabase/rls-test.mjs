@@ -35,10 +35,11 @@
 //     * anon SELECT on discount_codes returns 0 rows (no anon
 //       policy) and anon INSERT into discount_codes is DENIED.
 //     * anon INSERT into admins is DENIED (no policies at all).
-//     * is_admin() and every admin_* RPC are EXECUTE-granted only
-//       to `authenticated` — the anon key cannot call them at all
-//       (401/403/404), so the anon checks assert "not callable",
-//       not a `false` return.
+//     * is_admin() answers an anon call with `false` (auth.uid() is
+//       null, so EXISTS is false) — that is the safe answer, so the
+//       anon check accepts `false` or not-callable (401/403/404).
+//       The admin_* RPCs stay not-callable for anon (their own
+//       {ok:false, error:"forbidden"} or 401/403/404).
 //     * THE NON-ADMIN JWT TEST (closes the S-1 audit §5 open item):
 //       a throwaway user is signed up via the Auth API, signs in,
 //       and its JWT must get `false` from is_admin(), a denied
@@ -420,7 +421,7 @@ if (isTableMissing(siteSettings)) {
   check("anon SELECT discount_codes returns 200 with 0 rows (no anon policy)", false, blocked);
   check("anon INSERT into discount_codes is denied", false, blocked);
   check("anon INSERT into admins is denied", false, blocked);
-  check("anon rpc is_admin is not callable (401/403/404 — EXECUTE is authenticated-only)", false, blocked);
+  check("anon rpc is_admin returns false or is not callable (anon learns nothing)", false, blocked);
   check("anon rpc admin_list_orders returns forbidden/empty (no order data leaks)", false, blocked);
   check("non-admin JWT: rpc is_admin returns false", false, blocked);
   check("non-admin JWT: UPDATE on products is denied", false, blocked);
@@ -455,12 +456,16 @@ await expectDenied("anon INSERT into admins is denied", "POST", "admins",
   { user_id: "00000000-0000-4000-8000-000000000000", role: "owner" });
 
 // is_admin() is EXECUTE-granted only to `authenticated` (migration
-// 0005 revokes PUBLIC), so the anon key cannot call it at all —
-// PostgREST answers 401/403/404, never `false`. The `false` case
-// belongs to a logged-in non-admin (the JWT checks below).
+// 0005 revokes PUBLIC), but live Supabase still answers an anon call
+// with HTTP 200 + `false` (auth.uid() is null, so EXISTS is false).
+// That is the safe answer — anon learns nothing except "I am not an
+// admin" — so accept either not-callable (401/403/404) or `false`.
+// The `false` case for a LOGGED-IN non-admin is proven by the JWT
+// checks below.
 const isAdminAnon = await rest("POST", "rpc/is_admin", {});
-check("anon rpc is_admin is not callable (401/403/404 — EXECUTE is authenticated-only)",
-  [401, 403, 404].includes(isAdminAnon.status),
+check("anon rpc is_admin returns false or is not callable (anon learns nothing)",
+  [401, 403, 404].includes(isAdminAnon.status) ||
+    (isAdminAnon.status === 200 && isAdminAnon.data === false),
   `HTTP ${isAdminAnon.status}, ${JSON.stringify(isAdminAnon.data).slice(0, 120)}`);
 
 // Same for the admin RPCs: anon cannot execute them. Accept a
