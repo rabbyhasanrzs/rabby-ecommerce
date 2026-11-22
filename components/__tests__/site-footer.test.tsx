@@ -41,9 +41,12 @@ describe("SiteFooter finish (S-5)", () => {
 
     expect(
       screen.getByText(
-        /Payment methods: Cash on Delivery · bKash · Nagad · Rocket · Debit\/Credit Card · Online Payment Gateway/,
+        /Payment methods: Cash on Delivery · bKash · Nagad · Rocket · Debit\/Credit Card \(coming soon\)/,
       ),
     ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/Online Payment Gateway|demo configuration/),
+    ).not.toBeInTheDocument();
     expect(screen.queryByRole("img")).not.toBeInTheDocument();
   });
 

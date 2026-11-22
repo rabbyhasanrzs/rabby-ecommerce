@@ -104,7 +104,7 @@ export default function SiteFooter() {
         <div className="mx-auto flex w-full max-w-7xl flex-col gap-3 px-4 py-6 text-sm text-text-secondary md:px-8">
           <p>
             Payment methods: Cash on Delivery · bKash · Nagad · Rocket ·
-            Debit/Credit Card · Online Payment Gateway (demo configuration)
+            Debit/Credit Card (coming soon)
           </p>
           <p>Follow us: Facebook · Instagram · X (links coming soon)</p>
           <p>
