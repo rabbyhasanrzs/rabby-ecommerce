@@ -10,6 +10,23 @@ import {
 import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const { mockedResolveHeroPhoto } = vi.hoisted(() => ({
+  // Default: the photo exists. Tests that need the no-photo hero
+  // override this with mockReturnValueOnce(null).
+  mockedResolveHeroPhoto: vi.fn((): string | null => "/images/hero.jpg"),
+}));
+
+/**
+ * The hero photo is a binary the owner uploads later, so it is NOT
+ * in the repo — the real resolveHeroPhoto() reads the filesystem and
+ * returns null in a fresh checkout / CI. Mock it so this file's
+ * assertions are the same in every environment; the filesystem
+ * behaviour itself is covered by lib/__tests__/hero-photo.test.ts.
+ */
+vi.mock("@/lib/hero-photo", () => ({
+  resolveHeroPhoto: mockedResolveHeroPhoto,
+}));
+
 vi.mock("next/server", () => ({
   connection: vi.fn(async () => {}),
 }));
@@ -90,12 +107,33 @@ describe("Home page (S-5 build-out)", () => {
     expect(
       screen.getByRole("link", { name: "Shop sunglasses" }),
     ).toHaveAttribute("href", "/sunglasses");
-    // Hero photo present in the working copy: a real <img>, not a placeholder.
+    // Hero photo mocked present (see the mock above): a real <img>,
+    // not a placeholder.
     expect(
       screen.getByAltText(
         "Woman wearing white sunglasses outdoors in bright sunlight",
       ),
     ).toBeInTheDocument();
+  });
+
+  it("renders a finished typographic hero with no image when the photo is absent", () => {
+    mockedResolveHeroPhoto.mockReturnValueOnce(null);
+    render(<Home />);
+
+    expect(
+      screen.getByRole("heading", {
+        level: 1,
+        name: "Find sunglasses that fit you.",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Shop sunglasses" }),
+    ).toHaveAttribute("href", "/sunglasses");
+    expect(
+      screen.queryByAltText(
+        "Woman wearing white sunglasses outdoors in bright sunlight",
+      ),
+    ).not.toBeInTheDocument();
   });
 
   it("shows the approved 3-item trust strip", () => {
