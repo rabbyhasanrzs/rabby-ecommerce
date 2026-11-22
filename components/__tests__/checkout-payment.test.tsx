@@ -44,6 +44,42 @@ vi.mock("@/lib/bag-context", () => ({
 
 const fetchMock = vi.fn();
 
+// S-4: CheckoutForm fetches GET /api/settings on mount. Successful
+// checkouts queue this settings response first so the later
+// mockResolvedValueOnce values land on the validate / checkout calls
+// in order. The settings below are the demo-config values, so the
+// expected totals in these tests do not change.
+const settingsResponse = {
+  ok: true,
+  json: async () => ({
+    taxRatePercent: 5,
+    deliveryInsideFeeBdt: 60,
+    deliveryInsideEstimate: "1–2 days",
+    deliveryOutsideFeeBdt: 120,
+    deliveryOutsideEstimate: "3–5 days",
+    paymentCodEnabled: true,
+    paymentBkashEnabled: true,
+    paymentNagadEnabled: true,
+    paymentRocketEnabled: true,
+    paymentCardEnabled: true,
+    websiteNotice: "",
+    supportWhatsapp: "",
+    supportMessenger: "",
+    supportPhone: "",
+    supportEmail: "",
+  }),
+};
+
+/** No bag-validation or checkout call happened (the mount-time
+ *  /api/settings fetch is allowed). */
+function expectNoOrderCalls() {
+  expect(
+    fetchMock.mock.calls.filter(
+      ([url]) => url === "/api/bag/validate" || url === "/api/checkout",
+    ),
+  ).toHaveLength(0);
+}
+
 function fillValidForm() {
   fireEvent.change(screen.getByLabelText("Full name"), {
     target: { value: "Rabby Hasan" },
@@ -65,6 +101,7 @@ function selectBkash() {
 
 function mockSuccessfulCheckout() {
   fetchMock
+    .mockResolvedValueOnce(settingsResponse)
     .mockResolvedValueOnce({
       ok: true,
       json: async () => ({ ok: true, items: [], issues: [] }),
@@ -80,7 +117,7 @@ function mockSuccessfulCheckout() {
 }
 
 function checkoutBody() {
-  return JSON.parse(fetchMock.mock.calls[1]?.[1]?.body as string);
+  return JSON.parse(fetchMock.mock.calls[2]?.[1]?.body as string);
 }
 
 describe("CheckoutForm payment details (S-3, demo-safe)", () => {
@@ -143,7 +180,7 @@ describe("CheckoutForm payment details (S-3, demo-safe)", () => {
         "Enter a valid Bangladeshi mobile number (01XXXXXXXXX).",
       ),
     ).toBeInTheDocument();
-    expect(fetchMock).not.toHaveBeenCalled();
+    expectNoOrderCalls();
     expect(pushMock).not.toHaveBeenCalled();
   });
 
@@ -163,7 +200,7 @@ describe("CheckoutForm payment details (S-3, demo-safe)", () => {
     expect(
       await screen.findByText("Enter the Transaction ID from your payment."),
     ).toBeInTheDocument();
-    expect(fetchMock).not.toHaveBeenCalled();
+    expectNoOrderCalls();
   });
 
   it("valid bkash submit sends paymentReference / paymentSender INSIDE customer", async () => {
@@ -185,7 +222,8 @@ describe("CheckoutForm payment details (S-3, demo-safe)", () => {
         "/order/confirmation?ref=RB-2026-123456",
       );
     });
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/settings");
     const body = checkoutBody();
     expect(body.customer.paymentMethod).toBe("bkash");
     expect(body.customer.paymentReference).toBe("9A1B2C3D4E");

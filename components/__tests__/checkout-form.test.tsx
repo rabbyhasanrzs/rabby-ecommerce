@@ -44,6 +44,32 @@ vi.mock("@/lib/bag-context", () => ({
 
 const fetchMock = vi.fn();
 
+// S-4: CheckoutForm fetches GET /api/settings on mount. Tests that
+// submit the form queue this settings response first so the later
+// mockResolvedValueOnce values land on the validate / checkout calls
+// in order. The settings below are the demo-config values, so the
+// expected totals in these tests do not change.
+const settingsResponse = {
+  ok: true,
+  json: async () => ({
+    taxRatePercent: 5,
+    deliveryInsideFeeBdt: 60,
+    deliveryInsideEstimate: "1–2 days",
+    deliveryOutsideFeeBdt: 120,
+    deliveryOutsideEstimate: "3–5 days",
+    paymentCodEnabled: true,
+    paymentBkashEnabled: true,
+    paymentNagadEnabled: true,
+    paymentRocketEnabled: true,
+    paymentCardEnabled: true,
+    websiteNotice: "",
+    supportWhatsapp: "",
+    supportMessenger: "",
+    supportPhone: "",
+    supportEmail: "",
+  }),
+};
+
 function fillValidForm() {
   fireEvent.change(screen.getByLabelText("Full name"), {
     target: { value: "Rabby Hasan" },
@@ -106,11 +132,18 @@ describe("CheckoutForm", () => {
     expect(document.activeElement).toBe(
       screen.getByLabelText("Full name"),
     );
-    expect(fetchMock).not.toHaveBeenCalled();
+    // The mount-time /api/settings fetch may have run, but no bag
+    // validation or checkout call must have happened.
+    expect(
+      fetchMock.mock.calls.filter(
+        ([url]) => url === "/api/bag/validate" || url === "/api/checkout",
+      ),
+    ).toHaveLength(0);
   });
 
   it("submitting valid data validates the bag, places the order and navigates", async () => {
     fetchMock
+      .mockResolvedValueOnce(settingsResponse)
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({ ok: true, items: [], issues: [] }),
@@ -133,9 +166,10 @@ describe("CheckoutForm", () => {
         "/order/confirmation?ref=RB-2026-123456",
       );
     });
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/bag/validate");
-    expect(fetchMock.mock.calls[0]?.[1]?.body).toBe(
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/settings");
+    expect(fetchMock.mock.calls[1]?.[0]).toBe("/api/bag/validate");
+    expect(fetchMock.mock.calls[1]?.[1]?.body).toBe(
       JSON.stringify({
         items: [
           { slug: "sample-round-a", quantity: 2, priceBdt: 950 },
@@ -144,7 +178,7 @@ describe("CheckoutForm", () => {
       }),
     );
     const checkoutBody = JSON.parse(
-      fetchMock.mock.calls[1]?.[1]?.body as string,
+      fetchMock.mock.calls[2]?.[1]?.body as string,
     );
     expect(checkoutBody.customer.phone).toBe("01712345678");
     expect(checkoutBody.customer.zone).toBe("inside");
@@ -163,20 +197,22 @@ describe("CheckoutForm", () => {
   });
 
   it("a validate issue blocks checkout and shows the banner", async () => {
-    fetchMock.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
+    fetchMock
+      .mockResolvedValueOnce(settingsResponse)
+      .mockResolvedValueOnce({
         ok: true,
-        items: [],
-        issues: [
-          {
-            slug: "sample-round-a",
-            type: "out_of_stock",
-            message: "SAMPLE Round A is out of stock.",
-          },
-        ],
-      }),
-    });
+        json: async () => ({
+          ok: true,
+          items: [],
+          issues: [
+            {
+              slug: "sample-round-a",
+              type: "out_of_stock",
+              message: "SAMPLE Round A is out of stock.",
+            },
+          ],
+        }),
+      });
     render(<CheckoutForm />);
     fillValidForm();
 
@@ -185,12 +221,15 @@ describe("CheckoutForm", () => {
     expect(
       await screen.findByText("SAMPLE Round A is out of stock."),
     ).toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/settings");
+    expect(fetchMock.mock.calls[1]?.[0]).toBe("/api/bag/validate");
     expect(pushMock).not.toHaveBeenCalled();
   });
 
   it("a failed checkout shows an error and keeps the entered values", async () => {
     fetchMock
+      .mockResolvedValueOnce(settingsResponse)
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({ ok: true, items: [], issues: [] }),

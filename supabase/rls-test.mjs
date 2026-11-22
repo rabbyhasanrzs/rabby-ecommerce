@@ -28,6 +28,26 @@
 //       not_found for an unknown reference, and create_guest_order
 //       rejects a mobile-banking order with an invalid TrxID (the
 //       invalid-input probes create NO order).
+//   S-4 (migration 0005):
+//     * anon SELECT on site_settings returns the 1 seeded row
+//       (public shop config — tax 5%, delivery 60/120); anon
+//       UPDATE / INSERT / DELETE on site_settings is DENIED.
+//     * anon SELECT on discount_codes returns 0 rows (no anon
+//       policy) and anon INSERT into discount_codes is DENIED.
+//     * anon INSERT into admins is DENIED (no policies at all).
+//     * is_admin() and every admin_* RPC are EXECUTE-granted only
+//       to `authenticated` — the anon key cannot call them at all
+//       (401/403/404), so the anon checks assert "not callable",
+//       not a `false` return.
+//     * THE NON-ADMIN JWT TEST (closes the S-1 audit §5 open item):
+//       a throwaway user is signed up via the Auth API, signs in,
+//       and its JWT must get `false` from is_admin(), a denied
+//       UPDATE on products, and 0 rows from SELECT orders. The
+//       throwaway user cannot be deleted via the anon key — the
+//       owner deletes it in the Auth dashboard. If the project has
+//       email confirmation ON (the Supabase default), signup
+//       returns no session and the JWT checks are recorded as
+//       blocked with instructions, not passed silently.
 //   Prints PASS/FAIL per check and exits 0 only if every check passes.
 //
 // WHAT IT CANNOT DO YET — EXPECTED FAILURE BEFORE THE MIGRATIONS RUN
@@ -42,7 +62,11 @@
 //   orders tables are missing, even if migration 0001 already passed;
 //   Section 5 records its 7 checks as blocked (not a crash) when the
 //   payments table is missing, i.e. migration 0004 has not been applied
-//   yet.
+//   yet. Section 6 does the same for its 12 checks when
+//   site_settings is missing, i.e. migration 0005 has not been applied
+//   yet; its 3 non-admin-JWT checks are additionally recorded as
+//   blocked when no JWT can be obtained (email confirmation ON — see
+//   Section 6).
 //
 // HOW TO RUN (from the repo root; needs Node 18+ for global fetch)
 //   # load the public anon vars (never the service_role key) into the env:
@@ -373,21 +397,213 @@ check("rpc create_guest_order with bkash + an invalid TrxID returns a 4xx error 
   `HTTP ${badTrx.status}, ${JSON.stringify(badTrx.data).slice(0, 120)}`);
 
 // ---------------------------------------------------------------------------
-// Summary — 38 checks expected (24 S-1 + 7 S-2 + 7 S-3).
+// 6. S-4 admin settings + non-admin JWT (migration 0005).
+//    site_settings is public shop config (anon SELECT policy, 1 seeded
+//    row); writes are admin-only. discount_codes + admins have NO
+//    anon policy. is_admin() / am_i_admin() and every admin_* RPC
+//    are EXECUTE-granted only to `authenticated` — the anon key
+//    cannot call them at all (401/403/404), and a logged-in
+//    NON-admin can call is_admin() but gets `false` back.
+//    These checks run ONLY if the site_settings table exists; a 404
+//    PGRST205 means migration 0005 has not been applied yet — the
+//    checks are then recorded as blocked (not a crash) and the script
+//    exits non-zero with a clear message.
+// ---------------------------------------------------------------------------
+
+const siteSettings = await rest("GET", "site_settings?select=id,tax_rate_percent,delivery_inside_fee_bdt,delivery_outside_fee_bdt");
+if (isTableMissing(siteSettings)) {
+  const blocked = "blocked — migration 0005 has NOT been applied yet; apply it in the dashboard SQL editor, then re-run this script.";
+  check("anon SELECT site_settings returns 200 with exactly 1 seeded row (tax 5, delivery 60/120)", false, blocked);
+  check("anon UPDATE on site_settings is denied", false, blocked);
+  check("anon INSERT into site_settings is denied", false, blocked);
+  check("anon DELETE on site_settings is denied", false, blocked);
+  check("anon SELECT discount_codes returns 200 with 0 rows (no anon policy)", false, blocked);
+  check("anon INSERT into discount_codes is denied", false, blocked);
+  check("anon INSERT into admins is denied", false, blocked);
+  check("anon rpc is_admin is not callable (401/403/404 — EXECUTE is authenticated-only)", false, blocked);
+  check("anon rpc admin_list_orders returns forbidden/empty (no order data leaks)", false, blocked);
+  check("non-admin JWT: rpc is_admin returns false", false, blocked);
+  check("non-admin JWT: UPDATE on products is denied", false, blocked);
+  check("non-admin JWT: SELECT orders returns 0 rows", false, blocked);
+  const failedSoFar = results.filter((r) => !r.passed);
+  console.log(`\n${results.length - failedSoFar.length}/${results.length} checks passed.`);
+  console.log("RESULT: FAIL — migration 0005 has NOT been applied yet (Section 6 blocked). Sections 1–5 passed; apply migration 0005, then re-run.");
+  process.exit(1);
+}
+check("anon SELECT site_settings returns 200 with exactly 1 seeded row (tax 5, delivery 60/120)",
+  siteSettings.status === 200 && Array.isArray(siteSettings.data) && siteSettings.data.length === 1 &&
+  siteSettings.data[0].id === 1 && siteSettings.data[0].tax_rate_percent === 5 &&
+  siteSettings.data[0].delivery_inside_fee_bdt === 60 && siteSettings.data[0].delivery_outside_fee_bdt === 120,
+  `HTTP ${siteSettings.status}, ${JSON.stringify(siteSettings.data).slice(0, 160)}`);
+
+await expectDeniedWrite("anon UPDATE on site_settings is denied", "PATCH",
+  "site_settings?id=eq.1", { tax_rate_percent: 99 });
+await expectDenied("anon INSERT into site_settings is denied", "POST", "site_settings",
+  { id: 1, tax_rate_percent: 99 });
+await expectDeniedWrite("anon DELETE on site_settings is denied", "DELETE",
+  "site_settings?id=eq.1");
+
+const discountCodes = await rest("GET", "discount_codes?select=code");
+check("anon SELECT discount_codes returns 200 with 0 rows (no anon policy)",
+  discountCodes.status === 200 && Array.isArray(discountCodes.data) && discountCodes.data.length === 0,
+  `HTTP ${discountCodes.status}, ${Array.isArray(discountCodes.data) ? discountCodes.data.length : "?"} rows`);
+
+await expectDenied("anon INSERT into discount_codes is denied", "POST", "discount_codes",
+  { code: "RLSPROBE", percent_off: 10, active: true });
+
+await expectDenied("anon INSERT into admins is denied", "POST", "admins",
+  { user_id: "00000000-0000-4000-8000-000000000000", role: "owner" });
+
+// is_admin() is EXECUTE-granted only to `authenticated` (migration
+// 0005 revokes PUBLIC), so the anon key cannot call it at all —
+// PostgREST answers 401/403/404, never `false`. The `false` case
+// belongs to a logged-in non-admin (the JWT checks below).
+const isAdminAnon = await rest("POST", "rpc/is_admin", {});
+check("anon rpc is_admin is not callable (401/403/404 — EXECUTE is authenticated-only)",
+  [401, 403, 404].includes(isAdminAnon.status),
+  `HTTP ${isAdminAnon.status}, ${JSON.stringify(isAdminAnon.data).slice(0, 120)}`);
+
+// Same for the admin RPCs: anon cannot execute them. Accept a
+// 401/403/404, or — if a future grant ever exposes one — the
+// function's own {ok:false, error:"forbidden"} or an empty array.
+const listOrdersAnon = await rest("POST", "rpc/admin_list_orders",
+  { p_status: null, p_limit: 1, p_offset: 0 });
+const listOrdersForbidden =
+  [401, 403, 404].includes(listOrdersAnon.status) ||
+  (listOrdersAnon.data && listOrdersAnon.data.ok === false &&
+    listOrdersAnon.data.error === "forbidden") ||
+  (Array.isArray(listOrdersAnon.data) && listOrdersAnon.data.length === 0);
+check("anon rpc admin_list_orders returns forbidden/empty (no order data leaks)",
+  listOrdersForbidden,
+  `HTTP ${listOrdersAnon.status}, ${JSON.stringify(listOrdersAnon.data).slice(0, 120)}`);
+
+// --- The non-admin JWT test (closes the S-1 audit §5 open item) ---
+// Sign up a throwaway user via the Auth API with the anon key, sign
+// in, and use that JWT: is_admin() must return false, a product
+// UPDATE must be denied, and SELECT orders must return 0 rows.
+// The throwaway user CANNOT be deleted via the anon key — the owner
+// deletes it in the dashboard (Authentication -> Users).
+// If this project has email confirmation ON (the Supabase default),
+// signup returns a user but no session, and sign-in fails with
+// "Email not confirmed" — the checks are then recorded as blocked
+// (not a crash) with instructions, instead of passing silently.
+
+async function authApi(path, body, token) {
+  const res = await fetch(`${url}/auth/v1/${path}`, {
+    method: "POST",
+    headers: {
+      apikey: ANON_KEY,
+      Authorization: `Bearer ${token ?? ANON_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  let data = null;
+  const text = await res.text();
+  try {
+    data = JSON.parse(text);
+  } catch {
+    data = text;
+  }
+  return { status: res.status, data };
+}
+
+async function restAsJwt(token, method, path, body) {
+  const res = await fetch(`${url}/rest/v1/${path}`, {
+    method,
+    headers: {
+      apikey: ANON_KEY,
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      Prefer: "return=representation",
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  let data = null;
+  const text = await res.text();
+  try {
+    data = JSON.parse(text);
+  } catch {
+    data = text;
+  }
+  return { status: res.status, data };
+}
+
+const jwtStamp = Date.now();
+const probeEmail = `rls-test-${jwtStamp}@example.invalid`;
+const probePassword = `RlsProbe${jwtStamp}!`;
+let jwt = null;
+let jwtBlockedReason = "";
+const signup = await authApi("signup", {
+  email: probeEmail,
+  password: probePassword,
+});
+if (signup.status === 200 && signup.data && typeof signup.data.access_token === "string") {
+  jwt = signup.data.access_token;
+} else {
+  const signin = await authApi("token?grant_type=password", {
+    email: probeEmail,
+    password: probePassword,
+  });
+  if (signin.status === 200 && signin.data && typeof signin.data.access_token === "string") {
+    jwt = signin.data.access_token;
+  } else {
+    jwtBlockedReason = `signup HTTP ${signup.status} (no session returned) and sign-in HTTP ${signin.status} — ` +
+      "this project has email confirmation ON, so the throwaway user cannot sign in until confirmed. " +
+      "Create the user in the dashboard instead (Authentication -> Users -> Add user, tick 'Auto Confirm User'), " +
+      "then re-run; or turn off 'Confirm email' under Authentication -> Sign In / Providers.";
+  }
+}
+
+if (!jwt) {
+  const blocked = `blocked — no JWT for the throwaway user: ${jwtBlockedReason}`;
+  check("non-admin JWT: rpc is_admin returns false", false, blocked);
+  check("non-admin JWT: UPDATE on products is denied", false, blocked);
+  check("non-admin JWT: SELECT orders returns 0 rows", false, blocked);
+  const failedSoFar = results.filter((r) => !r.passed);
+  console.log(`\n${results.length - failedSoFar.length}/${results.length} checks passed.`);
+  console.log("RESULT: FAIL — non-admin JWT checks blocked (no JWT). The anon Section 6 checks passed; fix the confirmation issue above, then re-run.");
+  process.exit(1);
+}
+
+const isAdminJwt = await restAsJwt(jwt, "POST", "rpc/is_admin", {});
+check("non-admin JWT: rpc is_admin returns false",
+  isAdminJwt.status === 200 && isAdminJwt.data === false,
+  `HTTP ${isAdminJwt.status}, data: ${JSON.stringify(isAdminJwt.data).slice(0, 120)}`);
+
+const jwtPatch = await restAsJwt(jwt, "PATCH", "products?slug=eq.sample-round-a", { price_bdt: 1 });
+const jwtNoRows = jwtPatch.status === 200 && Array.isArray(jwtPatch.data) && jwtPatch.data.length === 0;
+check("non-admin JWT: UPDATE on products is denied",
+  jwtPatch.status === 401 || jwtPatch.status === 403 || jwtNoRows,
+  `HTTP ${jwtPatch.status} (expected 401/403, or 200 with 0 rows changed)`);
+
+const jwtOrders = await restAsJwt(jwt, "GET", "orders?select=id,reference");
+check("non-admin JWT: SELECT orders returns 0 rows",
+  jwtOrders.status === 200 && Array.isArray(jwtOrders.data) && jwtOrders.data.length === 0,
+  `HTTP ${jwtOrders.status}, ${Array.isArray(jwtOrders.data) ? jwtOrders.data.length : "?"} rows`);
+
+// Sign the throwaway user out. It cannot be deleted via the anon
+// key — the owner deletes it in the dashboard (Authentication ->
+// Users -> <probeEmail> -> Delete user).
+await authApi("logout", {}, jwt);
+console.log(`NOTE: throwaway user ${probeEmail} signed out. It cannot be deleted via the anon key — delete it in the Supabase dashboard (Authentication -> Users -> ${probeEmail} -> Delete user).`);
+
+// ---------------------------------------------------------------------------
+// Summary — 50 checks expected (24 S-1 + 7 S-2 + 7 S-3 + 12 S-4).
 // ---------------------------------------------------------------------------
 const failed = results.filter((r) => !r.passed);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed.`);
 if (failed.length > 0) {
-  console.log("RESULT: FAIL — do NOT merge S-3 until every check passes.");
+  console.log("RESULT: FAIL — do NOT merge S-4 until every check passes.");
   process.exit(1);
 }
-console.log("RESULT: PASS — anon RLS contract holds for all 5 S-1 tables, for orders / order_items / order_status_events (S-2, no policies) and for payments (S-3, no policies — access only via SECURITY DEFINER functions).");
+console.log("RESULT: PASS — anon RLS contract holds for all 5 S-1 tables, for orders / order_items / order_status_events (S-2, no policies) and for payments (S-3, no policies — access only via SECURITY DEFINER functions), and for the S-4 admin tables (site_settings public-read-only, discount_codes + admins no anon access, admin RPCs authenticated-only) — and the non-admin JWT test (Section 6) proves a logged-in non-admin gets is_admin() = false, a denied product UPDATE and 0 order rows.");
 console.log(
-  "NOTE: this script tests the anon role only. The audit §5 also requires a " +
-  "non-admin JWT denial test before merge — that needs a logged-in (non-admin) " +
-  "user, which does not exist until Supabase Auth lands (S-4); the code agent " +
-  "should record it as a remaining merge-gate item, not as covered here. " +
-  "A stronger negative test (insert one inactive product as postgres in the " +
-  "dashboard, confirm anon cannot see it, then delete it) is recommended " +
-  "once, by hand, after this script passes.",
+  "NOTE: the S-1 audit §5 non-admin-JWT open item is now covered " +
+  "by Section 6 (when a JWT can be obtained — if email confirmation " +
+  "blocks signup, the script records those 3 checks as blocked " +
+  "instead of passing silently). A stronger negative test (insert " +
+  "one inactive product as postgres in the dashboard, confirm anon " +
+  "cannot see it, then delete it) is recommended once, by hand, " +
+  "after this script passes.",
 );

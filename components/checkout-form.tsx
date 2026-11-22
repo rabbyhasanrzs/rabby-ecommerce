@@ -8,14 +8,17 @@ import {
 } from "@/lib/checkout-validation";
 import {
   DELIVERY_OPTIONS,
+  DEMO_TAX_RATE_PERCENT,
   PAYMENT_METHODS,
+  type DeliveryOption,
   type DeliveryZone,
   type PaymentMethodId,
 } from "@/lib/demo-config";
 import { formatPriceBdt } from "@/lib/format";
-import { computeTotals } from "@/lib/pricing";
+import { computeTotals, settingsToPricing } from "@/lib/pricing";
+import type { SiteSettings } from "@/lib/site-settings";
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 /**
  * Guest checkout form (S-2, T-22).
@@ -33,7 +36,32 @@ import { useRef, useState } from "react";
  * collected. COD shows no extra fields. Payment details travel INSIDE
  * `customer` in the checkout body (same shape as the S-2 fix).
  * On any failure the entered details are kept (controlled inputs).
+ *
+ * S-4: the form fetches the public shop settings (GET /api/settings)
+ * on mount and uses them for the totals + delivery display. While
+ * loading, or if the fetch fails, the demo-config values are used —
+ * checkout is never blocked on settings. The server is authoritative
+ * for the total anyway (create_guest_order reads site_settings).
  */
+
+/** Shape-check the /api/settings JSON; anything else is ignored and
+ *  the demo-config values stay in use. */
+function parseSettingsJson(value: unknown): SiteSettings | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const row = value as Record<string, unknown>;
+  if (
+    typeof row.taxRatePercent !== "number" ||
+    typeof row.deliveryInsideFeeBdt !== "number" ||
+    typeof row.deliveryInsideEstimate !== "string" ||
+    typeof row.deliveryOutsideFeeBdt !== "number" ||
+    typeof row.deliveryOutsideEstimate !== "string"
+  ) {
+    return null;
+  }
+  return value as SiteSettings;
+}
 
 const FIELD_ORDER = [
   "name",
@@ -77,6 +105,31 @@ export default function CheckoutForm() {
   const [banner, setBanner] = useState<string | null>(null);
   const [validateIssues, setValidateIssues] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  // S-4: public shop settings (tax %, delivery fees/estimates).
+  // null = still loading, or the fetch failed — the demo-config
+  // values are used until settings arrive, never a blocked checkout.
+  const [settings, setSettings] = useState<SiteSettings | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await fetch("/api/settings");
+        if (!response?.ok) {
+          return;
+        }
+        const parsed = parseSettingsJson(await response.json());
+        if (!cancelled && parsed) {
+          setSettings(parsed);
+        }
+      } catch {
+        // Settings unavailable — keep the demo-config values.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // One ref per field so a failed submit can move focus to the first
   // bad field. (Plain useRef objects passed straight to `ref=` — no
@@ -118,7 +171,28 @@ export default function CheckoutForm() {
     }
   }
 
-  const totals = computeTotals(subtotalBdt, zone);
+  // S-4: totals + delivery display use the admin settings when they
+  // have loaded; otherwise the demo-config defaults.
+  const deliveryOptions: Record<DeliveryZone, DeliveryOption> = settings
+    ? {
+        inside: {
+          feeBdt: settings.deliveryInsideFeeBdt,
+          label: "Inside Dhaka",
+          estimate: settings.deliveryInsideEstimate,
+        },
+        outside: {
+          feeBdt: settings.deliveryOutsideFeeBdt,
+          label: "Outside Dhaka",
+          estimate: settings.deliveryOutsideEstimate,
+        },
+      }
+    : DELIVERY_OPTIONS;
+  const taxRatePercent = settings?.taxRatePercent ?? DEMO_TAX_RATE_PERCENT;
+  const totals = computeTotals(
+    subtotalBdt,
+    zone,
+    settings ? settingsToPricing(settings) : undefined,
+  );
 
   function focusFirstError(
     nextErrors: Partial<Record<FieldName, string>>,
@@ -399,9 +473,9 @@ export default function CheckoutForm() {
           Delivery zone
         </legend>
         <div className="space-y-2">
-          {(Object.keys(DELIVERY_OPTIONS) as DeliveryZone[]).map(
+          {(Object.keys(deliveryOptions) as DeliveryZone[]).map(
             (optionZone, index) => {
-              const option = DELIVERY_OPTIONS[optionZone];
+              const option = deliveryOptions[optionZone];
               return (
                 <label
                   key={optionZone}
@@ -602,7 +676,7 @@ export default function CheckoutForm() {
             <dd>{formatPriceBdt(totals.subtotalBdt)}</dd>
           </div>
           <div className="flex justify-between">
-            <dt>Tax (5%)</dt>
+            <dt>Tax ({taxRatePercent}%)</dt>
             <dd>{formatPriceBdt(totals.taxBdt)}</dd>
           </div>
           <div className="flex justify-between">

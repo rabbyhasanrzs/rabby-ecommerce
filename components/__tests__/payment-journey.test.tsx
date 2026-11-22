@@ -155,7 +155,30 @@ describe("payment journey (S-3, T-34 — API/page level, no browser E2E)", () =>
 
   it("bag → bkash checkout with TrxID → confirmation → track order → cancel before Shipped", async () => {
     // --- Step 1: bag → checkout (bkash + TrxID) ---
+    // The first response is the mount-time GET /api/settings fetch
+    // (S-4); the settings below are the demo-config values, so the
+    // expected total (৳3,315) does not change.
     fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          taxRatePercent: 5,
+          deliveryInsideFeeBdt: 60,
+          deliveryInsideEstimate: "1–2 days",
+          deliveryOutsideFeeBdt: 120,
+          deliveryOutsideEstimate: "3–5 days",
+          paymentCodEnabled: true,
+          paymentBkashEnabled: true,
+          paymentNagadEnabled: true,
+          paymentRocketEnabled: true,
+          paymentCardEnabled: true,
+          websiteNotice: "",
+          supportWhatsapp: "",
+          supportMessenger: "",
+          supportPhone: "",
+          supportEmail: "",
+        }),
+      })
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({ ok: true, items: [], issues: [] }),
@@ -191,7 +214,7 @@ describe("payment journey (S-3, T-34 — API/page level, no browser E2E)", () =>
       );
     });
     const checkoutBody = JSON.parse(
-      fetchMock.mock.calls[1]?.[1]?.body as string,
+      fetchMock.mock.calls[2]?.[1]?.body as string,
     );
     expect(checkoutBody.customer.paymentMethod).toBe("bkash");
     expect(checkoutBody.customer.paymentReference).toBe("9A1B2C3D4E");
