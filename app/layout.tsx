@@ -1,3 +1,5 @@
+import { Analytics } from "@vercel/analytics/next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import AnnouncementBanner from "@/components/announcement-banner";
 import MiniCartDrawer from "@/components/mini-cart-drawer";
 import SiteFooter from "@/components/site-footer";
@@ -102,6 +104,15 @@ export default function RootLayout({
           <SiteFooter />
           <MiniCartDrawer />
         </BagProvider>
+        {/*
+         * S-6 monitoring: Vercel Analytics (page views) + Speed
+         * Insights (real-visitor Core Web Vitals), free on Hobby.
+         * Both load their scripts and send their beacons to
+         * same-origin /_vercel/... paths, so the CSP needs no new
+         * host — 'self' already allows them. They render nothing.
+         */}
+        <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );
