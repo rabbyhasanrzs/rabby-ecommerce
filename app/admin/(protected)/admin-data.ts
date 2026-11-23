@@ -279,6 +279,41 @@ export async function adminUpdateOrderStatus(
   return { ok: true };
 }
 
+/**
+ * Notification log write (S-7, 1.x-4 — migration 0012).
+ *
+ * One row in notification_log per order-status email attempt, via
+ * the SECURITY DEFINER log_notification function (the table itself
+ * has no policies and no grants — deny-by-default, same as
+ * order_status_events). NEVER throws: a failed log write must never
+ * fail the status update or turn a sent email into a failed one —
+ * the log is an audit trail, not part of the update.
+ *
+ * The recipient email is stored in the admin-only table (the owner
+ * asked for it there) — never in a console log.
+ */
+export async function logNotificationAttempt(input: {
+  orderReference: string;
+  type: "order_status";
+  status: string;
+  recipient: string | null;
+  result: "sent" | "failed" | "skipped";
+  error?: string | null;
+}): Promise<void> {
+  try {
+    await callAdminRpc("log_notification", {
+      p_order_reference: input.orderReference,
+      p_type: input.type,
+      p_status: input.status,
+      p_recipient: input.recipient,
+      p_result: input.result,
+      p_error: input.error ?? null,
+    });
+  } catch {
+    // Best-effort audit log — see above.
+  }
+}
+
 export async function adminUpdatePaymentStatus(
   reference: string,
   status: "paid" | "failed",
