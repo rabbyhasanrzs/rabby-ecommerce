@@ -76,6 +76,11 @@ export async function POST(request: Request) {
     const { reference, totalBdt } = await createGuestOrder({
       customer: parsed.data.customer,
       items: parsed.data.items,
+      // S-7: the coupon code, if one was applied (optional). The
+      // server re-validates it at order creation — a code deactivated
+      // after Apply raises 'coupon_invalid', which maps to a
+      // VALIDATION error below and blocks the order.
+      discountCode: parsed.data.discountCode,
     });
     // S-6: order confirmation email (Launch Decision 4, Gmail SMTP).
     // A failure here must NEVER fail the order: the send function
@@ -120,8 +125,16 @@ export async function POST(request: Request) {
         );
       }
       if (error.code === "VALIDATION") {
+        // The mapped message is the plain-words error (e.g. the
+        // coupon message from mapCreateOrderError) — show it, not a
+        // generic fallback. Every VALIDATION message is plain-words
+        // by construction, so surfacing it is safe.
         return Response.json(
-          { ok: false, error: "Please check your details and try again." },
+          {
+            ok: false,
+            error:
+              error.message || "Please check your details and try again.",
+          },
           { status: 400 },
         );
       }

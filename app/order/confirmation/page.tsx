@@ -270,6 +270,19 @@ function ConfirmationContent() {
                 <dt>Subtotal</dt>
                 <dd>{formatPriceBdt(order.subtotalBdt)}</dd>
               </div>
+              {/* S-7: discount line, only when a coupon was applied.
+                  The Tax label stays hardcoded (5%) — the actual tax
+                  rate is not in the order data, so it cannot be
+                  shown here without a Slice B change. */}
+              {(order.discountBdt ?? 0) > 0 ? (
+                <div className="flex justify-between">
+                  <dt>
+                    Discount
+                    {order.discountCode ? ` (${order.discountCode})` : ""}
+                  </dt>
+                  <dd>−{formatPriceBdt(order.discountBdt ?? 0)}</dd>
+                </div>
+              ) : null}
               <div className="flex justify-between">
                 <dt>Tax (5%)</dt>
                 <dd>{formatPriceBdt(order.taxBdt)}</dd>

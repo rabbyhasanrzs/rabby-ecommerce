@@ -36,9 +36,38 @@ const checkoutItemSchema = z.object({
   quantity: z.number().int().min(1).max(99),
 });
 
+/**
+ * A coupon / discount code (S-7, T-70). Same shape as the admin
+ * discount-code schema (app/admin/(protected)/settings/actions.ts):
+ * uppercase alphanumeric, 3–20 characters. Normalised (trim +
+ * uppercase) before the regex runs, so "re518" is accepted as
+ * "RE518". Shared by the checkout request and the validate endpoint.
+ */
+export const discountCodeSchema = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .regex(
+    /^[A-Z0-9]{3,20}$/,
+    "Enter a valid coupon code (3–20 letters or numbers).",
+  );
+
+/** POST /api/coupons/validate — the code plus the bag subtotal it applies to. */
+export const couponValidateRequestSchema = z.object({
+  code: discountCodeSchema,
+  subtotalBdt: z.number().int().min(0),
+  zone: z.enum(["inside", "outside"]),
+});
+
+export type CouponValidateRequest = z.infer<typeof couponValidateRequestSchema>;
+
 export const checkoutRequestSchema = z.object({
   customer: checkoutFormSchema,
   items: z.array(checkoutItemSchema).min(1).max(20),
+  // S-7: optional — absent means no coupon. The server re-validates
+  // the code at order creation (create_guest_order, migration 0009),
+  // so a code deactivated after Apply still blocks the order.
+  discountCode: discountCodeSchema.optional(),
 });
 
 export type CheckoutRequest = z.infer<typeof checkoutRequestSchema>;

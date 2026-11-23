@@ -639,10 +639,10 @@ export default function SettingsForm({
           <DemoBadge />
         </h2>
         <p className="mt-1 text-sm text-text-secondary">
-          Demo code DEMO10 is pre-seeded. Customer coupon redemption is
-          1.x — these codes are configured here for now. Codes are never
-          deleted: deactivate a code instead, so past orders keep their
-          record.
+          Demo code DEMO10 is pre-seeded. Customers can now redeem
+          active codes at checkout — the discount applies to their
+          order total. Codes are never deleted: deactivate a code
+          instead, so past orders keep their record.
         </p>
 
         {discountCodes.length === 0 ? (

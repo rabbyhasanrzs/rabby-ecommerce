@@ -2,6 +2,7 @@ import {
   bagValidateRequestSchema,
   cancelRequestSchema,
   checkoutRequestSchema,
+  couponValidateRequestSchema,
   lookupRequestSchema,
 } from "@/lib/api-schemas";
 import { describe, expect, it } from "vitest";
@@ -160,6 +161,132 @@ describe("checkoutRequestSchema", () => {
       checkoutRequestSchema.safeParse({
         customer: validCustomer,
         items: [],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("accepts a valid coupon code and normalises it to uppercase", () => {
+    const parsed = checkoutRequestSchema.safeParse({
+      customer: validCustomer,
+      items: validItems,
+      discountCode: "re518",
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.discountCode).toBe("RE518");
+    }
+  });
+
+  it("accepts a checkout body with no coupon code (optional)", () => {
+    const parsed = checkoutRequestSchema.safeParse({
+      customer: validCustomer,
+      items: validItems,
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.discountCode).toBeUndefined();
+    }
+  });
+
+  it("rejects a malformed coupon code", () => {
+    for (const discountCode of [
+      "ab", // too short
+      "RE518123456789012345678", // too long (21 chars)
+      "RE 518", // space
+      "RE518!", // punctuation
+      "ré518", // non-ASCII
+    ]) {
+      expect(
+        checkoutRequestSchema.safeParse({
+          customer: validCustomer,
+          items: validItems,
+          discountCode,
+        }).success,
+      ).toBe(false);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// couponValidateRequestSchema (S-7)
+// ---------------------------------------------------------------------------
+
+describe("couponValidateRequestSchema", () => {
+  it("accepts a valid code, subtotal and zone, normalising the code", () => {
+    const parsed = couponValidateRequestSchema.safeParse({
+      code: " re518 ",
+      subtotalBdt: 1000,
+      zone: "inside",
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.code).toBe("RE518");
+      expect(parsed.data.subtotalBdt).toBe(1000);
+      expect(parsed.data.zone).toBe("inside");
+    }
+  });
+
+  it("accepts a zero subtotal", () => {
+    expect(
+      couponValidateRequestSchema.safeParse({
+        code: "RE518",
+        subtotalBdt: 0,
+        zone: "outside",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("rejects a malformed code", () => {
+    expect(
+      couponValidateRequestSchema.safeParse({
+        code: "ab",
+        subtotalBdt: 1000,
+        zone: "inside",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects a negative or float subtotal and a bad zone", () => {
+    expect(
+      couponValidateRequestSchema.safeParse({
+        code: "RE518",
+        subtotalBdt: -1,
+        zone: "inside",
+      }).success,
+    ).toBe(false);
+    expect(
+      couponValidateRequestSchema.safeParse({
+        code: "RE518",
+        subtotalBdt: 1000.5,
+        zone: "inside",
+      }).success,
+    ).toBe(false);
+    expect(
+      couponValidateRequestSchema.safeParse({
+        code: "RE518",
+        subtotalBdt: 1000,
+        zone: "nowhere",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects missing fields", () => {
+    expect(
+      couponValidateRequestSchema.safeParse({
+        subtotalBdt: 1000,
+        zone: "inside",
+      }).success,
+    ).toBe(false);
+    expect(
+      couponValidateRequestSchema.safeParse({
+        code: "RE518",
+        zone: "inside",
+      }).success,
+    ).toBe(false);
+    expect(
+      couponValidateRequestSchema.safeParse({
+        code: "RE518",
+        subtotalBdt: 1000,
       }).success,
     ).toBe(false);
   });

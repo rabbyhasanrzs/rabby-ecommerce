@@ -125,6 +125,10 @@ export interface AdminOrder {
   subtotal_bdt: number | null;
   tax_bdt: number | null;
   delivery_fee_bdt: number | null;
+  /** S-7: applied coupon code + Taka discount, from admin_get_order
+   *  (migration 0009). Null / 0 when no coupon was applied. */
+  discount_code: string | null;
+  discount_bdt: number | null;
   status: string;
   created_at: string;
 }

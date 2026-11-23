@@ -83,6 +83,13 @@ export function buildOrderConfirmationEmail(
   const trackUrl = `${SITE_URL}/orders?ref=${order.reference}`;
   const delivery = DELIVERY_OPTIONS[order.deliveryZone];
   const subject = `Your RabbY order ${order.reference} is confirmed`;
+  // S-7: discount, only when a coupon was applied to this order.
+  const discountBdt = order.discountBdt ?? 0;
+  const discountCode = order.discountCode ?? null;
+  const discountTextLine =
+    discountBdt > 0
+      ? `Discount${discountCode ? ` (${discountCode})` : ""}: −${formatPriceBdt(discountBdt)}`
+      : null;
 
   const itemLines = order.items
     .map(
@@ -100,6 +107,7 @@ export function buildOrderConfirmationEmail(
     itemLines,
     ``,
     `Subtotal: ${formatPriceBdt(order.subtotalBdt)}`,
+    ...(discountTextLine ? [discountTextLine] : []),
     `Tax: ${formatPriceBdt(order.taxBdt)}`,
     `Delivery fee: ${formatPriceBdt(order.deliveryFeeBdt)}`,
     `Total: ${formatPriceBdt(order.totalBdt)}`,
@@ -127,7 +135,7 @@ export function buildOrderConfirmationEmail(
     `<p>Hi ${escapeHtml(order.customerName)},</p>`,
     `<p>Thank you for your order with RabbY. Your order <strong>${escapeHtml(order.reference)}</strong> is confirmed.</p>`,
     `<table style="width:100%;border-collapse:collapse;">${itemRows}</table>`,
-    `<p>Subtotal: ${formatPriceBdt(order.subtotalBdt)}<br>Tax: ${formatPriceBdt(order.taxBdt)}<br>Delivery fee: ${formatPriceBdt(order.deliveryFeeBdt)}<br><strong>Total: ${formatPriceBdt(order.totalBdt)}</strong></p>`,
+    `<p>Subtotal: ${formatPriceBdt(order.subtotalBdt)}${discountTextLine ? `<br>${escapeHtml(discountTextLine)}` : ""}<br>Tax: ${formatPriceBdt(order.taxBdt)}<br>Delivery fee: ${formatPriceBdt(order.deliveryFeeBdt)}<br><strong>Total: ${formatPriceBdt(order.totalBdt)}</strong></p>`,
     `<p>Payment method: ${escapeHtml(paymentLabel(order.paymentMethod))}<br>Payment status: ${escapeHtml(paymentStatusLabel(order.paymentStatus, order.paymentMethod))}${isMobileBankingMethod(order.paymentMethod) && order.paymentReference ? `<br>Transaction ID: ${escapeHtml(order.paymentReference)}` : ""}<br>Delivery: ${escapeHtml(delivery.label)} — ${escapeHtml(delivery.estimate)}</p>`,
     `<p><a href="${trackUrl}">Track your order</a></p>`,
     `<p>Thank you for shopping with RabbY.</p>`,

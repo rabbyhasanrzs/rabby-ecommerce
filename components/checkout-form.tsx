@@ -15,7 +15,7 @@ import {
   type PaymentMethodId,
 } from "@/lib/demo-config";
 import { formatPriceBdt } from "@/lib/format";
-import { computeTotals, settingsToPricing } from "@/lib/pricing";
+import { computeDiscountedTotals, computeTotals, settingsToPricing } from "@/lib/pricing";
 import type { SiteSettings } from "@/lib/site-settings";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -82,6 +82,29 @@ function isMobileBankingMethodId(method: PaymentMethodId): boolean {
 }
 
 /**
+ * S-7: coupon error codes the checkout route returns when the applied
+ * code fails server-side re-validation at order placement (code
+ * deactivated between Apply and Place Order). The message check in
+ * isCouponCheckoutError is the fallback for a plain-words coupon
+ * error returned without a code.
+ */
+const COUPON_CHECKOUT_ERROR_CODES = [
+  "invalid_coupon",
+  "coupon_inactive",
+  "coupon_not_found",
+];
+
+function isCouponCheckoutError(data: {
+  code?: string;
+  error?: string;
+}): boolean {
+  if (data.code && COUPON_CHECKOUT_ERROR_CODES.includes(data.code)) {
+    return true;
+  }
+  return typeof data.error === "string" && /coupon/i.test(data.error);
+}
+
+/**
  * S-4: whether a payment method is switched on in the admin
  * settings. The checkout list must follow these flags — a method
  * the owner turned off must not be offered. Unknown ids stay on
@@ -133,6 +156,17 @@ export default function CheckoutForm() {
   // null = still loading, or the fetch failed — the demo-config
   // values are used until settings arrive, never a blocked checkout.
   const [settings, setSettings] = useState<SiteSettings | null>(null);
+  // S-7: coupon redemption. The applied code + its server-validated
+  // discount live here only — the server re-validates at order
+  // placement, so this state is display + request only.
+  const [couponInput, setCouponInput] = useState("");
+  const [appliedCoupon, setAppliedCoupon] = useState<{
+    code: string;
+    percentOff: number;
+    discountBdt: number;
+  } | null>(null);
+  const [couponError, setCouponError] = useState<string | null>(null);
+  const [validatingCoupon, setValidatingCoupon] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -212,11 +246,24 @@ export default function CheckoutForm() {
       }
     : DELIVERY_OPTIONS;
   const taxRatePercent = settings?.taxRatePercent ?? DEMO_TAX_RATE_PERCENT;
-  const totals = computeTotals(
-    subtotalBdt,
-    zone,
-    settings ? settingsToPricing(settings) : undefined,
-  );
+  const pricingSettings = settings
+    ? settingsToPricing(settings)
+    : undefined;
+  const totals = computeTotals(subtotalBdt, zone, pricingSettings);
+  // S-7: discount first, tax on (subtotal − discount) — the same
+  // formula the server uses (computeDiscountedTotals, which mirrors
+  // migration 0009 §4). The display math here and the server math
+  // agree by construction: discount = round(subtotal * percent / 100),
+  // tax = round((subtotal − discount) * rate / 100).
+  const discountedTotals = appliedCoupon
+    ? computeDiscountedTotals(
+        subtotalBdt,
+        zone,
+        appliedCoupon.percentOff,
+        pricingSettings,
+      )
+    : null;
+  const displayTotals = discountedTotals ?? totals;
 
   // S-4: only offer the payment methods the owner left switched on
   // in Admin Settings. While settings are still loading (or the
@@ -247,6 +294,65 @@ export default function CheckoutForm() {
     ) {
       setPaymentMethod(enabledPaymentMethods[0]?.id ?? "cod");
     }
+  }
+
+  // S-7: validate a coupon code against the server before the order
+  // is placed, so the customer sees the discounted total up front.
+  // The code is trimmed + uppercased on submit; the server is
+  // authoritative for the discount amount.
+  async function handleApplyCoupon() {
+    const code = couponInput.trim().toUpperCase();
+    if (!code) {
+      setCouponError("Enter a coupon code.");
+      return;
+    }
+    setCouponError(null);
+    setValidatingCoupon(true);
+    try {
+      const response = await fetch("/api/coupons/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code, subtotalBdt, zone }),
+      });
+      const data: {
+        ok?: boolean;
+        percentOff?: number;
+        discountBdt?: number;
+        error?: string;
+      } = await response.json();
+      if (
+        !response.ok ||
+        !data.ok ||
+        typeof data.percentOff !== "number" ||
+        typeof data.discountBdt !== "number"
+      ) {
+        setAppliedCoupon(null);
+        setCouponError(
+          data.error ??
+            "That coupon code is not valid. Check the code and try again.",
+        );
+        return;
+      }
+      setAppliedCoupon({
+        code,
+        percentOff: data.percentOff,
+        discountBdt: data.discountBdt,
+      });
+      setCouponInput(code);
+    } catch {
+      setAppliedCoupon(null);
+      setCouponError(
+        "Something went wrong while checking the coupon. Please try again.",
+      );
+    } finally {
+      setValidatingCoupon(false);
+    }
+  }
+
+  function handleRemoveCoupon() {
+    setAppliedCoupon(null);
+    setCouponInput("");
+    setCouponError(null);
   }
 
   function focusFirstError(
@@ -346,18 +452,32 @@ export default function CheckoutForm() {
             variantColour: item.variantColour,
             quantity: item.quantity,
           })),
+          // S-7: only when a code was applied and validated above.
+          ...(appliedCoupon ? { discountCode: appliedCoupon.code } : {}),
         }),
       });
       const checkoutData: {
         ok?: boolean;
         reference?: string;
         error?: string;
+        code?: string;
         issues?: { message: string }[];
       } = await checkoutResponse.json();
       if (!checkoutResponse.ok || !checkoutData.ok || !checkoutData.reference) {
         if (checkoutData.issues && checkoutData.issues.length > 0) {
           setValidateIssues(
             checkoutData.issues.map((issue) => issue.message),
+          );
+        } else if (isCouponCheckoutError(checkoutData)) {
+          // S-7: the code was deactivated between Apply and Place
+          // Order. The server re-validates, so the order is blocked
+          // — clear the code so the customer can re-apply another
+          // code or place the order without one.
+          setAppliedCoupon(null);
+          setCouponError(null);
+          setBanner(
+            checkoutData.error ??
+              "This coupon code is no longer valid. You can try another code or place your order without one.",
           );
         } else {
           setBanner(
@@ -734,22 +854,91 @@ export default function CheckoutForm() {
             </li>
           ))}
         </ul>
+        <div className="mt-4 border-t border-border pt-3">
+          {appliedCoupon ? (
+            <p className="flex flex-wrap items-center gap-3 text-text">
+              <span>
+                Coupon{" "}
+                <span className="font-semibold">{appliedCoupon.code}</span>{" "}
+                applied — {appliedCoupon.percentOff}% off
+              </span>
+              <button
+                type="button"
+                onClick={handleRemoveCoupon}
+                aria-label="Remove coupon code"
+                className="inline-flex min-h-11 items-center rounded-md border border-border bg-surface px-4 py-2 font-semibold text-text"
+              >
+                Remove
+              </button>
+            </p>
+          ) : (
+            <>
+              <label
+                htmlFor="checkout-coupon"
+                className="mb-1 block font-semibold text-text"
+              >
+                Coupon code
+              </label>
+              <div className="flex gap-2">
+                <input
+                  id="checkout-coupon"
+                  name="coupon"
+                  type="text"
+                  autoComplete="off"
+                  autoCapitalize="characters"
+                  placeholder="e.g. RE518"
+                  value={couponInput}
+                  onChange={(event) => setCouponInput(event.target.value)}
+                  aria-invalid={Boolean(couponError)}
+                  aria-describedby={
+                    couponError ? "checkout-coupon-error" : undefined
+                  }
+                  className={inputClassName}
+                />
+                <button
+                  type="button"
+                  onClick={handleApplyCoupon}
+                  disabled={validatingCoupon}
+                  aria-label="Apply coupon code"
+                  className="inline-flex min-h-11 shrink-0 items-center rounded-md bg-action px-4 py-2 font-semibold text-text-inverse transition-colors hover:bg-action-hover disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {validatingCoupon ? "Checking…" : "Apply"}
+                </button>
+              </div>
+            </>
+          )}
+          {couponError ? (
+            <p
+              id="checkout-coupon-error"
+              role="alert"
+              className="mt-1 text-sm text-error"
+            >
+              {couponError}
+            </p>
+          ) : null}
+        </div>
         <dl className="mt-4 space-y-1 border-t border-border pt-3 text-text">
           <div className="flex justify-between">
             <dt>Subtotal</dt>
             <dd>{formatPriceBdt(totals.subtotalBdt)}</dd>
           </div>
+          {appliedCoupon ? (
+            <div className="flex justify-between">
+              <dt>Discount ({appliedCoupon.code})</dt>
+              <dd>−{formatPriceBdt(appliedCoupon.discountBdt)}</dd>
+            </div>
+          ) : null}
           <div className="flex justify-between">
             <dt>Tax ({taxRatePercent}%)</dt>
-            <dd>{formatPriceBdt(totals.taxBdt)}</dd>
+            <dd>{formatPriceBdt(displayTotals.taxBdt)}</dd>
           </div>
           <div className="flex justify-between">
             <dt>Delivery fee</dt>
-            <dd>{formatPriceBdt(totals.deliveryFeeBdt)}</dd>
+            <dd>{formatPriceBdt(displayTotals.deliveryFeeBdt)}</dd>
           </div>
           <div className="flex justify-between border-t border-border pt-2 text-lg font-bold">
             <dt>Total</dt>
-            <dd>{formatPriceBdt(totals.totalBdt)}</dd>
+            <dd>{formatPriceBdt(displayTotals.totalBdt)}</dd>
           </div>
         </dl>
       </section>
