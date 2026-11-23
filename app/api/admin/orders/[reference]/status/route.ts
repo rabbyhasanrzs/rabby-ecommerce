@@ -1,21 +1,61 @@
 import {
+  adminClient,
   adminUpdateOrderStatus,
   orderStatusUpdateSchema,
-  requireAdmin,
 } from "@/app/admin/(protected)/admin-data";
+import {
+  checkAdminAccess,
+  getSupabaseAdminEnv,
+} from "@/lib/supabase/admin";
 
 /**
  * POST /api/admin/orders/[reference]/status — update an order's
- * status (S-4, T-46). requireAdmin() first. The RPC writes the new
- * status + a row in order_status_events, so the customer timeline
- * (which reads those events) shows the change. On Cancel the note
- * is the cancel reason and is required.
+ * status (S-4, T-46).
+ *
+ * Auth failures are answered with JSON, never a redirect (same as
+ * the inventory route, PR #26): this route is called with fetch(),
+ * and a redirect would come back as the login page's HTML. The RPC
+ * writes the new status + a row in order_status_events, so the
+ * customer timeline (which reads those events) shows the change.
+ * On Cancel the note is the cancel reason and is required.
  */
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ reference: string }> },
 ) {
-  await requireAdmin();
+  if (!getSupabaseAdminEnv()) {
+    // No Supabase configured (e.g. a build with no env vars): nobody
+    // can be signed in — the same answer as a logged-out visit.
+    return Response.json(
+      {
+        ok: false,
+        error: "Your session ended. Please sign in again.",
+        code: "unauthenticated",
+      },
+      { status: 401 },
+    );
+  }
+  const access = await checkAdminAccess(await adminClient());
+  if (access.status !== "ok") {
+    const error =
+      access.status === "unauthenticated"
+        ? "Your session ended. Please sign in again."
+        : access.status === "forbidden"
+          ? "This account is not an admin."
+          : access.status === "mfa-missing"
+            ? "Two-factor authentication is required. Please set it up first."
+            : "Two-factor authentication is required. Please sign in again with your authenticator code.";
+    // Log the failure server-side (route + code only, no user data);
+    // the admin sees the plain-words message above.
+    console.error("Admin API auth failed", {
+      route: "POST /api/admin/orders/[reference]/status",
+      code: access.status,
+    });
+    return Response.json(
+      { ok: false, error, code: access.status },
+      { status: 401 },
+    );
+  }
   const { reference } = await params;
 
   let body: unknown;

@@ -1,7 +1,8 @@
+import { adminClient } from "@/app/admin/(protected)/admin-data";
 import {
-  adminClient,
-  requireAdmin,
-} from "@/app/admin/(protected)/admin-data";
+  checkAdminAccess,
+  getSupabaseAdminEnv,
+} from "@/lib/supabase/admin";
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024; // 5 MB
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
@@ -62,19 +63,55 @@ const EXTENSIONS_BY_TYPE: Record<string, string[]> = {
 /**
  * POST /api/admin/products/upload — product photo upload (S-4, T-42).
  *
- * requireAdmin() first. Accepts one multipart file field ("file"),
- * JPEG/PNG/WebP up to 5 MB, uploads it to the `product-images`
- * Storage bucket (created by migration 0005) and returns the public
- * URL. The product form stores that URL in product_images — the
- * storefront renders it with a plain <img> (CSP already allows
- * https://*.supabase.co images). No file is ever stored in the repo.
+ * Auth failures are answered with JSON, never a redirect (same as
+ * the inventory route, PR #26): this route is called with fetch(),
+ * and a redirect would come back as the login page's HTML. Accepts
+ * one multipart file field ("file"), JPEG/PNG/WebP up to 5 MB,
+ * uploads it to the `product-images` Storage bucket (created by
+ * migration 0005) and returns the public URL. The product form
+ * stores that URL in product_images — the storefront renders it
+ * with a plain <img> (CSP already allows https://*.supabase.co
+ * images). No file is ever stored in the repo.
  *
  * The claimed MIME is never trusted: the format is sniffed from
  * magic bytes (S-6, T-61, S6-09) and the stored contentType is the
  * sniffed one.
  */
 export async function POST(request: Request) {
-  await requireAdmin();
+  if (!getSupabaseAdminEnv()) {
+    // No Supabase configured (e.g. a build with no env vars): nobody
+    // can be signed in — the same answer as a logged-out visit.
+    return Response.json(
+      {
+        ok: false,
+        error: "Your session ended. Please sign in again.",
+        code: "unauthenticated",
+      },
+      { status: 401 },
+    );
+  }
+  const supabase = await adminClient();
+  const access = await checkAdminAccess(supabase);
+  if (access.status !== "ok") {
+    const error =
+      access.status === "unauthenticated"
+        ? "Your session ended. Please sign in again."
+        : access.status === "forbidden"
+          ? "This account is not an admin."
+          : access.status === "mfa-missing"
+            ? "Two-factor authentication is required. Please set it up first."
+            : "Two-factor authentication is required. Please sign in again with your authenticator code.";
+    // Log the failure server-side (route + code only, no user data);
+    // the admin sees the plain-words message above.
+    console.error("Admin API auth failed", {
+      route: "POST /api/admin/products/upload",
+      code: access.status,
+    });
+    return Response.json(
+      { ok: false, error, code: access.status },
+      { status: 401 },
+    );
+  }
 
   let formData: FormData;
   try {
@@ -135,7 +172,6 @@ export async function POST(request: Request) {
     .replace(/^-+|-+$/g, "")
     .slice(0, 80);
   const path = `products/${Date.now()}-${safeName || "photo"}`;
-  const supabase = await adminClient();
   const { error: uploadError } = await supabase.storage
     .from("product-images")
     .upload(path, file, {

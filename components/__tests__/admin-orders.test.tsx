@@ -25,6 +25,18 @@ const { rpcMock } = vi.hoisted(() => ({
 vi.mock("@/lib/supabase/admin", () => ({
   requireAdmin: vi.fn(async () => ({ id: "admin-1" })),
   createAdminClient: () => ({ rpc: rpcMock }),
+  // S-6 follow-up (same hidden-error class as the inventory save
+  // bug, PR #26): the status route now answers auth failures with
+  // 401 JSON via checkAdminAccess instead of requireAdmin()'s
+  // redirect — the gate must be mocked as passing here.
+  checkAdminAccess: vi.fn(async () => ({
+    status: "ok",
+    user: { id: "admin-1" },
+  })),
+  getSupabaseAdminEnv: () => ({
+    url: "https://example.supabase.co",
+    anonKey: "anon-key",
+  }),
 }));
 
 const { lookupMock } = vi.hoisted(() => ({

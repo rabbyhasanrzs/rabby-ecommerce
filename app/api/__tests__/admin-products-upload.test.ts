@@ -4,21 +4,29 @@
 import { POST, sniffImageType } from "@/app/api/admin/products/upload/route";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { requireAdminMock, adminClientMock, uploadMock } = vi.hoisted(() => ({
-  requireAdminMock: vi.fn(),
-  adminClientMock: vi.fn(),
-  uploadMock: vi.fn(),
-}));
+const { adminClientMock, checkAccessMock, getEnvMock, uploadMock } =
+  vi.hoisted(() => ({
+    adminClientMock: vi.fn(),
+    checkAccessMock: vi.fn(),
+    getEnvMock: vi.fn(),
+    uploadMock: vi.fn(),
+  }));
 
 /**
  * Upload route tests (S-6, T-61, S6-09) — mocked admin gate +
  * mocked Storage, no network. The magic-byte sniffing is the point:
  * a file that claims to be a PNG but is not one must be rejected
- * before anything is stored.
+ * before anything is stored. Auth failures (S-6 follow-up, same
+ * hidden-error class as the inventory save bug, PR #26) must come
+ * back as 401 JSON — never a redirect, because fetch() cannot use
+ * a login redirect.
  */
 vi.mock("@/app/admin/(protected)/admin-data", () => ({
-  requireAdmin: requireAdminMock,
   adminClient: adminClientMock,
+}));
+vi.mock("@/lib/supabase/admin", () => ({
+  checkAdminAccess: checkAccessMock,
+  getSupabaseAdminEnv: getEnvMock,
 }));
 
 const JPEG_BYTES = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
@@ -60,7 +68,14 @@ describe("sniffImageType", () => {
 describe("POST /api/admin/products/upload", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    requireAdminMock.mockResolvedValue(undefined);
+    getEnvMock.mockReturnValue({
+      url: "https://example.supabase.co",
+      anonKey: "anon-key",
+    });
+    checkAccessMock.mockResolvedValue({
+      status: "ok",
+      user: { id: "admin-id" },
+    });
     uploadMock.mockResolvedValue({ data: { path: "products/1-photo.jpg" }, error: null });
     adminClientMock.mockResolvedValue({
       storage: {
@@ -88,6 +103,21 @@ describe("POST /api/admin/products/upload", () => {
       contentType: "image/jpeg",
       upsert: false,
     });
+  });
+
+  it("answers 401 JSON when the session ended — never a redirect", async () => {
+    checkAccessMock.mockResolvedValue({ status: "unauthenticated", user: null });
+    const response = await postUpload(
+      new File([JPEG_BYTES], "photo.jpg", { type: "image/jpeg" }),
+    );
+    expect(response.status).toBe(401);
+    expect(response.headers.get("content-type")).toContain("application/json");
+    expect(await response.json()).toEqual({
+      ok: false,
+      error: "Your session ended. Please sign in again.",
+      code: "unauthenticated",
+    });
+    expect(uploadMock).not.toHaveBeenCalled();
   });
 
   it("rejects HTML bytes that claim to be a PNG", async () => {
