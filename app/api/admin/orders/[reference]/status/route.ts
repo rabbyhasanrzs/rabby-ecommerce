@@ -1,8 +1,10 @@
 import {
   adminClient,
+  adminGetOrder,
   adminUpdateOrderStatus,
   orderStatusUpdateSchema,
 } from "@/app/admin/(protected)/admin-data";
+import { sendOrderStatusEmail } from "@/lib/order-email";
 import {
   checkAdminAccess,
   getSupabaseAdminEnv,
@@ -81,6 +83,18 @@ export async function POST(
     );
   }
 
+  // Best-effort: the status before the move. The RPC accepts a
+  // same-status re-save (migration 0005, no guard), so without this
+  // the customer would get a duplicate email for a no-op save. A
+  // failed read never blocks the update — the send below then
+  // simply cannot prove "unchanged" and sends once.
+  let previousStatus: string | null = null;
+  try {
+    previousStatus = (await adminGetOrder(reference))?.order.status ?? null;
+  } catch {
+    // Best-effort only — see above.
+  }
+
   const result = await adminUpdateOrderStatus(
     reference,
     parsed.data.status,
@@ -112,6 +126,22 @@ export async function POST(
       { ok: false, error: "Something went wrong. Please try again." },
       { status: 500 },
     );
+  }
+  // Auto-send the status email (S-7, 1.x-4). The status change is
+  // already committed; a failed or skipped send is logged in
+  // notification_log (migration 0012) and the admin still gets
+  // { ok: true } — the email must never fail the update.
+  // sendOrderStatusEmail never throws by contract; the try/catch is
+  // a belt under the braces.
+  try {
+    await sendOrderStatusEmail({
+      reference,
+      status: parsed.data.status,
+      previousStatus,
+      note: parsed.data.note ?? null,
+    });
+  } catch {
+    // Never fail the status update on an email error.
   }
   return Response.json({ ok: true, reference, status: parsed.data.status });
 }

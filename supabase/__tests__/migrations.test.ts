@@ -23,6 +23,11 @@ const migration0011 = readFileSync(
   "utf8",
 );
 
+const migration0012 = readFileSync(
+  join(process.cwd(), "supabase/migrations/0012_s7_notifications.sql"),
+  "utf8",
+);
+
 const ADMIN_WRITTEN_TABLES = [
   "categories",
   "products",
@@ -269,5 +274,67 @@ describe("migration 0011 — S-7 home-page reviews", () => {
 
   it("seeds no reviews", () => {
     expect(migration0011).not.toContain("INSERT INTO");
+  });
+});
+
+describe("migration 0012 — S-7 order status email log", () => {
+  it("creates the notification_log table (re-run safe, result CHECK, order reference index)", () => {
+    expect(migration0012).toContain(
+      "CREATE TABLE IF NOT EXISTS public.notification_log (",
+    );
+    expect(migration0012).toContain("order_reference text NOT NULL,");
+    expect(migration0012).toContain(
+      "CHECK (type IN ('order_status'))",
+    );
+    expect(migration0012).toContain(
+      "CHECK (result IN ('sent', 'failed', 'skipped'))",
+    );
+    expect(migration0012).toContain("recipient       text,");
+    expect(migration0012).toContain(
+      "CREATE INDEX IF NOT EXISTS idx_notification_log_order_reference",
+    );
+  });
+
+  it("is deny-by-default RLS with no policies and no table grants (function-only access, like order_status_events)", () => {
+    expect(migration0012).toContain(
+      "ALTER TABLE public.notification_log ENABLE ROW LEVEL SECURITY;",
+    );
+    expect(migration0012).not.toContain("CREATE POLICY");
+    expect(migration0012).not.toMatch(
+      /^GRANT\s+(SELECT|INSERT|UPDATE|DELETE)[^;]*\bTO (anon|authenticated)\b/im,
+    );
+    expect(migration0012).not.toMatch(/^GRANT[^;]*\bTO anon\b/im);
+  });
+
+  it("defines log_notification as SECURITY DEFINER, admin-gated, with authenticated-only EXECUTE", () => {
+    expect(migration0012).toContain(
+      "CREATE OR REPLACE FUNCTION public.log_notification(",
+    );
+    expect(migration0012).toContain("SECURITY DEFINER");
+    expect(migration0012).toContain("IF NOT public.is_admin() THEN");
+    expect(migration0012).toContain(
+      "INSERT INTO public.notification_log",
+    );
+    expect(migration0012).toContain(
+      "GRANT EXECUTE ON FUNCTION public.log_notification(text, text, text, text, text, text) TO authenticated;",
+    );
+    expect(migration0012).not.toContain(
+      "GRANT EXECUTE ON FUNCTION public.log_notification(text, text, text, text, text, text) TO anon",
+    );
+  });
+
+  it("seeds no rows — the only INSERT into notification_log is the log function itself", () => {
+    expect(migration0012.match(/INSERT INTO public\.notification_log/g)?.length).toBe(1);
+  });
+
+  it("touches no other table and no other function", () => {
+    expect(migration0012).not.toContain("ALTER TABLE public.orders");
+    expect(migration0012).not.toContain("ALTER TABLE public.order_status_events");
+    expect(migration0012).not.toContain(
+      "CREATE OR REPLACE FUNCTION public.admin_update_order_status",
+    );
+    expect(migration0012).not.toContain(
+      "CREATE OR REPLACE FUNCTION public.admin_get_order",
+    );
   });
 });

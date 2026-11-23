@@ -1,4 +1,8 @@
 import nodemailer from "nodemailer";
+import {
+  adminGetOrder,
+  logNotificationAttempt,
+} from "@/app/admin/(protected)/admin-data";
 import { DELIVERY_OPTIONS, PAYMENT_METHODS } from "@/lib/demo-config";
 import { formatPriceBdt } from "@/lib/format";
 import { SITE_URL } from "@/lib/seo";
@@ -31,8 +35,19 @@ import {
  *   short timeout (EMAIL_SEND_TIMEOUT_MS) so a hung SMTP connection
  *   cannot stall the checkout response.
  *
- * No other emails live here: no status-change, admin, or marketing
- * email. Those are future work, only if the owner asks.
+ * No other emails live here: no admin, marketing, back-in-stock, or
+ * payment email. Those are future work, only if the owner asks.
+ *
+ * Order status emails (S-7, 1.x-4, F18) live here too — see
+ * ORDER_STATUS_EMAIL_TRIGGERS below. One short email per admin
+ * status move (Confirmed -> Delivered, plus Cancelled), sent
+ * automatically from POST /api/admin/orders/[reference]/status.
+ * Placed is excluded — the confirmation email above already covers
+ * it. Returned / Refunded / Failed do NOT trigger an email in v1
+ * (owner decision). Every attempt is written to notification_log
+ * (migration 0012) via the admin-only log_notification function —
+ * the recipient email lives in that admin-only table, never in
+ * console / Vercel logs.
  */
 
 /** Hard cap on waiting for Gmail SMTP inside a checkout request. */
@@ -219,6 +234,326 @@ export async function sendOrderConfirmationEmail(input: {
       input.reference,
       error instanceof Error ? error.message : "unknown error",
     );
+    return { status: "failed", reason: "send failed" };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Order status emails (S-7, 1.x-4, F18 — the status-updates half)
+// ---------------------------------------------------------------------------
+
+/**
+ * Statuses that trigger a status email. All forward steps from
+ * Confirmed to Delivered, plus Cancelled. Placed is excluded — the
+ * order-confirmation email already covers it, so the customer is
+ * never emailed twice for one event. Returned / Refunded / Failed
+ * do NOT trigger an email in v1 (owner decision).
+ *
+ * Free movement (PR #21) means one email per move, never a burst
+ * for skipped steps: the admin jumps Placed -> Delivered directly,
+ * the customer gets one email for Delivered.
+ */
+export const ORDER_STATUS_EMAIL_TRIGGERS = [
+  "confirmed",
+  "processing",
+  "packed",
+  "shipped",
+  "out_for_delivery",
+  "delivered",
+  "cancelled",
+] as const;
+
+export function isOrderStatusEmailTrigger(status: string): boolean {
+  return (ORDER_STATUS_EMAIL_TRIGGERS as readonly string[]).includes(status);
+}
+
+/** Plain-words label per trigger status — same words as the track-order timeline. */
+const ORDER_STATUS_EMAIL_LABELS: Record<string, string> = {
+  confirmed: "Confirmed",
+  processing: "Processing",
+  packed: "Packed",
+  shipped: "Shipped",
+  out_for_delivery: "Out for Delivery",
+  delivered: "Delivered",
+  cancelled: "Cancelled",
+};
+
+/** One plain-words line saying what the new status means. */
+const ORDER_STATUS_EMAIL_LINES: Record<string, string> = {
+  confirmed: "We've confirmed your order and we're getting it ready.",
+  processing: "We're preparing your order for packing.",
+  packed: "Your order is packed and ready to ship.",
+  shipped: "Your order is on its way to you.",
+  out_for_delivery:
+    "Your order is out for delivery and should reach you soon.",
+  delivered:
+    "Your order has been delivered. Thank you for shopping with RabbY.",
+  cancelled: "Your order has been cancelled.",
+};
+
+/**
+ * What the status builder needs — only what the email renders
+ * (items + total), mapped from the admin order detail by the send
+ * function. No payment details, no address, no sender number.
+ */
+export interface OrderStatusEmailOrder {
+  reference: string;
+  customerName: string;
+  items: Array<{
+    productName: string;
+    variantColour: string | null;
+    quantity: number;
+    lineTotalBdt: number;
+  }>;
+  totalBdt: number;
+}
+
+/**
+ * Pure builder: order status email for one order. Same shape as
+ * buildOrderConfirmationEmail (subject / text / html, no secrets).
+ * The `note` is the admin's cancel reason — rendered only for a
+ * cancelled order, never for other statuses.
+ */
+export function buildOrderStatusEmail(
+  order: OrderStatusEmailOrder,
+  customerEmail: string,
+  fromAddress: string,
+  status: string,
+  note?: string | null,
+): OrderConfirmationEmail {
+  const label = ORDER_STATUS_EMAIL_LABELS[status] ?? status;
+  const meaning = ORDER_STATUS_EMAIL_LINES[status] ?? "";
+  const trackUrl = `${SITE_URL}/orders?ref=${order.reference}`;
+  const subject = `Your RabbY order ${order.reference} is now ${label}`;
+  const cancelReason =
+    status === "cancelled" && note && note.trim().length > 0
+      ? note.trim()
+      : null;
+
+  const itemLines = order.items
+    .map(
+      (item) =>
+        `- ${item.productName}${item.variantColour ? ` — ${item.variantColour}` : ""} × ${item.quantity} — ${formatPriceBdt(item.lineTotalBdt)}`,
+    )
+    .join("\n");
+
+  const text = [
+    `Hi ${order.customerName},`,
+    ``,
+    `Your order ${order.reference} is now ${label}.`,
+    meaning,
+    ...(cancelReason ? [`Reason: ${cancelReason}`] : []),
+    ``,
+    `Items:`,
+    itemLines,
+    ``,
+    `Total: ${formatPriceBdt(order.totalBdt)}`,
+    ``,
+    `Track your order: ${trackUrl}`,
+    ``,
+    `Thank you for shopping with RabbY.`,
+  ].join("\n");
+
+  const itemRows = order.items
+    .map(
+      (item) =>
+        `<tr><td style="padding:6px 0;">${escapeHtml(item.productName)}${item.variantColour ? ` — ${escapeHtml(item.variantColour)}` : ""} × ${item.quantity}</td><td style="padding:6px 0;text-align:right;">${formatPriceBdt(item.lineTotalBdt)}</td></tr>`,
+    )
+    .join("");
+
+  const html = [
+    `<p>Hi ${escapeHtml(order.customerName)},</p>`,
+    `<p>Your order <strong>${escapeHtml(order.reference)}</strong> is now <strong>${escapeHtml(label)}</strong>.</p>`,
+    ...(meaning ? [`<p>${escapeHtml(meaning)}</p>`] : []),
+    ...(cancelReason
+      ? [`<p>Reason: ${escapeHtml(cancelReason)}</p>`]
+      : []),
+    `<table style="width:100%;border-collapse:collapse;">${itemRows}</table>`,
+    `<p><strong>Total: ${formatPriceBdt(order.totalBdt)}</strong></p>`,
+    `<p><a href="${trackUrl}">Track your order</a></p>`,
+    `<p>Thank you for shopping with RabbY.</p>`,
+  ].join("\n");
+
+  return {
+    from: `RabbY <${fromAddress}>`,
+    to: customerEmail,
+    subject,
+    text,
+    html,
+  };
+}
+
+/**
+ * Best-effort write to notification_log (migration 0012). Never
+ * throws: a failed log write must never fail the status update or
+ * turn a sent email into a failed one. The recipient email goes
+ * into the admin-only table only — never into a console log.
+ */
+async function logStatusEmailAttempt(input: {
+  reference: string;
+  status: string;
+  recipient: string | null;
+  result: EmailSendStatus;
+  reason?: string;
+}): Promise<void> {
+  try {
+    await logNotificationAttempt({
+      orderReference: input.reference,
+      type: "order_status",
+      status: input.status,
+      recipient: input.recipient,
+      result: input.result,
+      error: input.result === "sent" ? null : (input.reason ?? null),
+    });
+  } catch {
+    // Best-effort audit log — see above.
+  }
+}
+
+/**
+ * Send the order status email for one admin status move.
+ * NEVER throws: every failure path returns { status: "failed" } (or
+ * "skipped") after a server-side log carrying only the reference +
+ * a plain-words reason — never the customer email, never a secret.
+ * The caller (the status route) already committed the status change
+ * before calling this, so a failed send never fails the update.
+ *
+ * The order is fetched with adminGetOrder — the guest lookup
+ * deliberately hides the customer email (migration 0006), so only
+ * the admin-side read has it.
+ */
+export async function sendOrderStatusEmail(input: {
+  reference: string;
+  status: string;
+  /**
+   * Status before the move. When it equals the new status the move
+   * was a re-save, not a change, and no email goes out — the RPC
+   * (admin_update_order_status, migration 0005) accepts same-status
+   * re-saves, so without this the customer would get a duplicate
+   * email for a no-op save. Null / missing means "unknown": the
+   * email is sent once (the guard only skips what it can prove
+   * did not change).
+   */
+  previousStatus?: string | null;
+  /** The cancel reason (admin note) — rendered only for cancelled. */
+  note?: string | null;
+}): Promise<EmailSendResult> {
+  // 1. Trigger allow-list — Placed / Returned / Refunded / Failed
+  //    never send in v1. This is not a failure: nothing was attempted.
+  if (!isOrderStatusEmailTrigger(input.status)) {
+    return { status: "skipped", reason: "status does not trigger an email" };
+  }
+
+  // 2. Same-status re-save — no change, no email.
+  if (
+    input.previousStatus != null &&
+    input.previousStatus === input.status
+  ) {
+    return { status: "skipped", reason: "status unchanged" };
+  }
+
+  const user = process.env.GMAIL_USER;
+  const pass = process.env.GMAIL_APP_PASSWORD;
+  if (!user || !pass) {
+    // Email not configured (local dev, CI, or env vars not set yet):
+    // skip silently. The status update itself is unaffected.
+    await logStatusEmailAttempt({
+      reference: input.reference,
+      status: input.status,
+      recipient: null,
+      result: "skipped",
+      reason: "email not configured",
+    });
+    return { status: "skipped", reason: "email not configured" };
+  }
+
+  let recipient: string | null = null;
+  try {
+    const adminOrder = await adminGetOrder(input.reference);
+    if (!adminOrder) {
+      console.error(
+        "[order-email] status email skipped: order not found",
+        input.reference,
+      );
+      await logStatusEmailAttempt({
+        reference: input.reference,
+        status: input.status,
+        recipient: null,
+        result: "failed",
+        reason: "order not found",
+      });
+      return { status: "failed", reason: "order not found" };
+    }
+
+    recipient = adminOrder.order.customer_email;
+    if (!recipient) {
+      console.error(
+        "[order-email] status email skipped: no customer email",
+        input.reference,
+      );
+      await logStatusEmailAttempt({
+        reference: input.reference,
+        status: input.status,
+        recipient: null,
+        result: "failed",
+        reason: "no customer email",
+      });
+      return { status: "failed", reason: "no customer email" };
+    }
+
+    const email = buildOrderStatusEmail(
+      {
+        reference: adminOrder.order.reference,
+        customerName: adminOrder.order.customer_name,
+        items: adminOrder.items.map((item) => ({
+          productName: item.name,
+          variantColour: item.variant_colour,
+          quantity: item.quantity,
+          lineTotalBdt: item.price_bdt * item.quantity,
+        })),
+        totalBdt: adminOrder.order.total_bdt,
+      },
+      recipient,
+      user,
+      input.status,
+      input.note ?? null,
+    );
+    const transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: { user, pass },
+      connectionTimeout: 8000,
+      socketTimeout: 8000,
+    });
+    await withTimeout(
+      transporter.sendMail({
+        from: email.from,
+        to: email.to,
+        subject: email.subject,
+        text: email.text,
+        html: email.html,
+      }),
+      EMAIL_SEND_TIMEOUT_MS,
+    );
+    await logStatusEmailAttempt({
+      reference: input.reference,
+      status: input.status,
+      recipient,
+      result: "sent",
+    });
+    return { status: "sent" };
+  } catch (error) {
+    console.error(
+      "[order-email] status email failed",
+      input.reference,
+      error instanceof Error ? error.message : "unknown error",
+    );
+    await logStatusEmailAttempt({
+      reference: input.reference,
+      status: input.status,
+      recipient,
+      result: "failed",
+      reason: "send failed",
+    });
     return { status: "failed", reason: "send failed" };
   }
 }

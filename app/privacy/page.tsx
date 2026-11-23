@@ -46,8 +46,10 @@ export default function PrivacyPage() {
         <p className="mt-3 leading-relaxed text-text">
           We use your details only to fulfil your order: to deliver
           it, to confirm it, and to help you if you contact us about
-          it. Your email is collected at checkout only — the shop does
-          not send order-confirmation emails yet.
+          it. Your email is collected at checkout only — the shop
+          sends you an order-confirmation email and emails when your
+          order status changes, to the email address you gave at
+          checkout.
         </p>
       </section>
 

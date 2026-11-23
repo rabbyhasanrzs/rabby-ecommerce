@@ -9,14 +9,18 @@ const {
   adminClientMock,
   checkAccessMock,
   getEnvMock,
+  adminGetOrderMock,
   updateOrderStatusMock,
   updatePaymentStatusMock,
+  sendStatusEmailMock,
 } = vi.hoisted(() => ({
   adminClientMock: vi.fn(),
   checkAccessMock: vi.fn(),
   getEnvMock: vi.fn(),
+  adminGetOrderMock: vi.fn(),
   updateOrderStatusMock: vi.fn(),
   updatePaymentStatusMock: vi.fn(),
+  sendStatusEmailMock: vi.fn(),
 }));
 
 /**
@@ -33,10 +37,14 @@ vi.mock("@/app/admin/(protected)/admin-data", async (importOriginal) => {
   return {
     ...original,
     adminClient: adminClientMock,
+    adminGetOrder: adminGetOrderMock,
     adminUpdateOrderStatus: updateOrderStatusMock,
     adminUpdatePaymentStatus: updatePaymentStatusMock,
   };
 });
+vi.mock("@/lib/order-email", () => ({
+  sendOrderStatusEmail: sendStatusEmailMock,
+}));
 vi.mock("@/lib/supabase/admin", () => ({
   checkAdminAccess: checkAccessMock,
   getSupabaseAdminEnv: getEnvMock,
@@ -81,6 +89,9 @@ describe("POST /api/admin/orders/[reference]/status", () => {
       status: "ok",
       user: { id: "admin-id" },
     });
+    adminGetOrderMock.mockResolvedValue({ order: { status: "placed" } });
+    updateOrderStatusMock.mockResolvedValue({ ok: true });
+    sendStatusEmailMock.mockResolvedValue({ status: "sent" });
   });
 
   it("answers 401 JSON with the reason when the session ended — never a redirect", async () => {
@@ -103,6 +114,101 @@ describe("POST /api/admin/orders/[reference]/status", () => {
     const body = await res.json();
     expect(body.code).toBe("forbidden");
     expect(body.error).toBe("This account is not an admin.");
+  });
+
+  it("updates the status and sends one status email (previous status passed through)", async () => {
+    const res = await postStatus({ status: "confirmed" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      ok: true,
+      reference: REFERENCE,
+      status: "confirmed",
+    });
+    expect(updateOrderStatusMock).toHaveBeenCalledWith(
+      REFERENCE,
+      "confirmed",
+      null,
+    );
+    expect(sendStatusEmailMock).toHaveBeenCalledTimes(1);
+    expect(sendStatusEmailMock).toHaveBeenCalledWith({
+      reference: REFERENCE,
+      status: "confirmed",
+      previousStatus: "placed",
+      note: null,
+    });
+  });
+
+  it("still returns ok when the email send fails — the update never fails on email", async () => {
+    sendStatusEmailMock.mockRejectedValue(new Error("SMTP down"));
+    const res = await postStatus({ status: "shipped" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      ok: true,
+      reference: REFERENCE,
+      status: "shipped",
+    });
+    expect(updateOrderStatusMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes the unchanged status through for a same-status re-save, so the send function skips the duplicate", async () => {
+    adminGetOrderMock.mockResolvedValue({ order: { status: "confirmed" } });
+    const res = await postStatus({ status: "confirmed" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      ok: true,
+      reference: REFERENCE,
+      status: "confirmed",
+    });
+    expect(sendStatusEmailMock).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "confirmed", previousStatus: "confirmed" }),
+    );
+  });
+
+  it("does not send an email for Placed — it is not a valid target (confirmation email covers it)", async () => {
+    const res = await postStatus({ status: "placed" });
+    expect(res.status).toBe(400);
+    expect(updateOrderStatusMock).not.toHaveBeenCalled();
+    expect(sendStatusEmailMock).not.toHaveBeenCalled();
+  });
+
+  it("does not send an email when the transition is invalid", async () => {
+    updateOrderStatusMock.mockResolvedValue({
+      ok: false,
+      error: "invalid_transition",
+    });
+    const res = await postStatus({
+      status: "cancelled",
+      note: "Customer asked to cancel",
+    });
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({
+      ok: false,
+      error: "That status change is not allowed from here.",
+    });
+    expect(sendStatusEmailMock).not.toHaveBeenCalled();
+  });
+
+  it("passes the cancel reason through to the email", async () => {
+    const res = await postStatus({
+      status: "cancelled",
+      note: "Customer asked to cancel",
+    });
+    expect(res.status).toBe(200);
+    expect(sendStatusEmailMock).toHaveBeenCalledWith({
+      reference: REFERENCE,
+      status: "cancelled",
+      previousStatus: "placed",
+      note: "Customer asked to cancel",
+    });
+  });
+
+  it("delegates the trigger decision to the send function for Returned (no email in v1, decided there)", async () => {
+    adminGetOrderMock.mockResolvedValue({ order: { status: "delivered" } });
+    const res = await postStatus({ status: "returned" });
+    expect(res.status).toBe(200);
+    expect(sendStatusEmailMock).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "returned", previousStatus: "delivered" }),
+    );
   });
 });
 

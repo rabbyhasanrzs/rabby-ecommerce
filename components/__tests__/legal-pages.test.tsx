@@ -23,7 +23,10 @@ describe("Privacy Policy + Terms (S-5, T-54)", () => {
       screen.getByText(/Card details are never collected on this site/),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/does not send order-confirmation emails yet/),
+      screen.getByText(/sends you an order-confirmation email and emails when your order status changes/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/to the email address you gave at checkout/),
     ).toBeInTheDocument();
   });
 
