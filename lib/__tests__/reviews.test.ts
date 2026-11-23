@@ -1,6 +1,9 @@
 import {
   ReviewSubmitError,
   emptyReviewAggregate,
+  firstName,
+  getRecentApprovedReviews,
+  parseRecentReviews,
   parseReviewAggregate,
   submitReview,
 } from "@/lib/supabase/reviews";
@@ -196,6 +199,132 @@ describe("submitReview", () => {
     expect(caught).not.toBeInstanceOf(ReviewSubmitError);
     expect((caught as Error).message).toBe(
       "Your review couldn't be submitted. Please try again.",
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// firstName — home-page display name (first name only)
+// ---------------------------------------------------------------------------
+
+describe("firstName", () => {
+  it("returns the first word of a full name", () => {
+    expect(firstName("Test Buyer")).toBe("Test");
+    expect(firstName("  Test   Buyer  ")).toBe("Test");
+  });
+
+  it("returns a single-word name unchanged", () => {
+    expect(firstName("Test")).toBe("Test");
+  });
+
+  it("falls back to 'Customer' for a blank name", () => {
+    expect(firstName("")).toBe("Customer");
+    expect(firstName("   ")).toBe("Customer");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseRecentReviews + getRecentApprovedReviews (home page, 0011)
+// ---------------------------------------------------------------------------
+
+const RECENT_ROWS = [
+  {
+    product_slug: "sample-round-a",
+    product_name: "Sample Round A",
+    reviewer_name: "Test Buyer",
+    rating: 5,
+    body: "Great fit and very comfortable.",
+    created_at: "2026-11-23T10:00:00Z",
+  },
+  {
+    product_slug: "sample-aviator-a",
+    product_name: "Sample Aviator A",
+    reviewer_name: "Another Buyer",
+    rating: 4,
+    body: "Good value for the price.",
+    created_at: "2026-11-22T10:00:00Z",
+  },
+];
+
+describe("parseRecentReviews", () => {
+  it("parses rows from get_recent_approved_reviews (fixture data, clearly labelled test data)", () => {
+    expect(parseRecentReviews(RECENT_ROWS)).toEqual([
+      {
+        productSlug: "sample-round-a",
+        productName: "Sample Round A",
+        reviewerName: "Test Buyer",
+        rating: 5,
+        body: "Great fit and very comfortable.",
+        createdAt: "2026-11-23T10:00:00Z",
+      },
+      {
+        productSlug: "sample-aviator-a",
+        productName: "Sample Aviator A",
+        reviewerName: "Another Buyer",
+        rating: 4,
+        body: "Good value for the price.",
+        createdAt: "2026-11-22T10:00:00Z",
+      },
+    ]);
+  });
+
+  it("parses an empty array (zero approved reviews — the normal state)", () => {
+    expect(parseRecentReviews([])).toEqual([]);
+  });
+
+  it("returns null on a malformed payload (never a crash)", () => {
+    expect(parseRecentReviews(null)).toBeNull();
+    expect(parseRecentReviews({})).toBeNull();
+    expect(
+      parseRecentReviews([{ ...RECENT_ROWS[0], rating: 6 }]),
+    ).toBeNull();
+    expect(
+      parseRecentReviews([{ ...RECENT_ROWS[0], product_name: 42 }]),
+    ).toBeNull();
+  });
+});
+
+describe("getRecentApprovedReviews", () => {
+  it("calls get_recent_approved_reviews once with the home-page limit", async () => {
+    rpcMock.mockResolvedValue({ data: RECENT_ROWS, error: null });
+    await expect(getRecentApprovedReviews(3)).resolves.toEqual([
+      {
+        productSlug: "sample-round-a",
+        productName: "Sample Round A",
+        reviewerName: "Test Buyer",
+        rating: 5,
+        body: "Great fit and very comfortable.",
+        createdAt: "2026-11-23T10:00:00Z",
+      },
+      {
+        productSlug: "sample-aviator-a",
+        productName: "Sample Aviator A",
+        reviewerName: "Another Buyer",
+        rating: 4,
+        body: "Good value for the price.",
+        createdAt: "2026-11-22T10:00:00Z",
+      },
+    ]);
+    expect(rpcMock).toHaveBeenCalledTimes(1);
+    expect(rpcMock).toHaveBeenCalledWith("get_recent_approved_reviews", {
+      p_limit: 3,
+    });
+  });
+
+  it("throws a generic error when the RPC fails (the home section renders nothing)", async () => {
+    rpcMock.mockResolvedValue({
+      data: null,
+      error: { message: "something unexpected" },
+    });
+    await expect(getRecentApprovedReviews(3)).rejects.toThrowError(
+      "Reviews could not be loaded. Please try again.",
+    );
+  });
+
+  it("throws a generic error on a malformed payload", async () => {
+    rpcMock.mockResolvedValue({ data: [{ rating: 6 }], error: null });
+    await expect(getRecentApprovedReviews(3)).rejects.toThrowError(
+      "Reviews could not be loaded. Please try again.",
     );
   });
 });
