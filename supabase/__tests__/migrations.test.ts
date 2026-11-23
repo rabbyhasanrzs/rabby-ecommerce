@@ -13,6 +13,11 @@ const migration0009 = readFileSync(
   "utf8",
 );
 
+const migration0010 = readFileSync(
+  join(process.cwd(), "supabase/migrations/0010_s7_reviews.sql"),
+  "utf8",
+);
+
 const ADMIN_WRITTEN_TABLES = [
   "categories",
   "products",
@@ -119,5 +124,105 @@ describe("migration 0009 — S-7 coupon redemption", () => {
   it("returns discount_code and discount_bdt from lookup_guest_order and admin_get_order", () => {
     expect(migration0009).toContain("'discount_code', v_order.discount_code,");
     expect(migration0009).toContain("'discount_bdt', v_order.discount_bdt,");
+  });
+});
+
+describe("migration 0010 — S-7 product reviews", () => {
+  it("creates the reviews table (re-run safe, rating CHECKs, one review per order+product)", () => {
+    expect(migration0010).toContain(
+      "CREATE TABLE IF NOT EXISTS public.reviews (",
+    );
+    expect(migration0010).toContain("rating           int NOT NULL CHECK (rating BETWEEN 1 AND 5),");
+    expect(migration0010).toContain(
+      "CHECK (status IN ('pending', 'approved', 'rejected'))",
+    );
+    expect(migration0010).toContain(
+      "CONSTRAINT reviews_one_per_order_product UNIQUE (order_id, product_id)",
+    );
+    expect(migration0010).toContain(
+      "body             text NOT NULL CHECK (char_length(btrim(body)) BETWEEN 1 AND 2000),",
+    );
+  });
+
+  it("is admin-only RLS with no anon policy and no anon table grant", () => {
+    expect(migration0010).toContain(
+      "ALTER TABLE public.reviews ENABLE ROW LEVEL SECURITY;",
+    );
+    expect(migration0010).toContain(
+      "CREATE POLICY reviews_admin_all ON public.reviews",
+    );
+    // No TABLE grant to anon (the EXECUTE grants to anon on the
+    // SECURITY DEFINER functions below are the intended public path
+    // — the table itself is never readable by anon).
+    expect(migration0010).not.toMatch(
+      /^GRANT\s+(SELECT|INSERT|UPDATE|DELETE)[^;]*\bTO anon\b/im,
+    );
+    expect(migration0010).not.toContain("reviews_select_public");
+  });
+
+  it("grants the admin write privileges on reviews to authenticated", () => {
+    expect(migration0010).toContain(
+      "GRANT SELECT, INSERT, UPDATE, DELETE ON public.reviews TO authenticated;",
+    );
+  });
+
+  it("defines the three SECURITY DEFINER functions with anon + authenticated EXECUTE", () => {
+    expect(migration0010).toContain(
+      "CREATE OR REPLACE FUNCTION public.get_product_reviews(p_slug text)",
+    );
+    expect(migration0010).toContain(
+      "CREATE OR REPLACE FUNCTION public.get_product_review_aggregates(p_slugs text[])",
+    );
+    expect(migration0010).toContain(
+      "CREATE OR REPLACE FUNCTION public.submit_review(",
+    );
+    expect(migration0010).toContain("SECURITY DEFINER");
+    expect(migration0010).toContain(
+      "GRANT EXECUTE ON FUNCTION public.get_product_reviews(text) TO anon, authenticated;",
+    );
+    expect(migration0010).toContain(
+      "GRANT EXECUTE ON FUNCTION public.get_product_review_aggregates(text[]) TO anon, authenticated;",
+    );
+    expect(migration0010).toContain(
+      "GRANT EXECUTE ON FUNCTION public.submit_review(text, text, text, int, int, int, int, text) TO anon, authenticated;",
+    );
+  });
+
+  it("returns only approved reviews with the F12 aggregate (average, count, breakdown, sub-ratings)", () => {
+    expect(migration0010).toContain("status = 'approved'");
+    expect(migration0010).toContain("'average_rating'");
+    expect(migration0010).toContain("'review_count'");
+    expect(migration0010).toContain("'breakdown'");
+    expect(migration0010).toContain("'quality_average'");
+    expect(migration0010).toContain("'value_average'");
+    expect(migration0010).toContain("'fit_average'");
+  });
+
+  it("shares one order-not-found error for a missing order and a mismatched phone (no enumeration leak)", () => {
+    expect(migration0010).toContain("RAISE EXCEPTION 'review_order_not_found';");
+    expect(migration0010).not.toContain("review_order_not_exist");
+    expect(migration0010).not.toContain("review_phone_mismatch");
+    expect(migration0010).not.toContain("review_phone_wrong");
+  });
+
+  it("requires a delivered order and the product in the order, and blocks duplicates", () => {
+    expect(migration0010).toContain(
+      "RAISE EXCEPTION 'review_order_not_delivered';",
+    );
+    expect(migration0010).toContain(
+      "RAISE EXCEPTION 'review_product_not_in_order';",
+    );
+    expect(migration0010).toContain(
+      "RAISE EXCEPTION 'review_already_submitted';",
+    );
+  });
+
+  it("inserts as pending with the reviewer name from the order (never free text)", () => {
+    expect(migration0010).toContain("v_order.customer_name,");
+    expect(migration0010).toContain("btrim(p_body), 'pending'");
+  });
+
+  it("seeds no reviews — the only INSERT into reviews is the submit function itself", () => {
+    expect(migration0010.match(/INSERT INTO public\.reviews/g)?.length).toBe(1);
   });
 });

@@ -4,12 +4,14 @@ import FaceShapeIcon from "@/components/face-shape-icon";
 import { ChevronLeftIcon, ChevronRightIcon } from "@/components/icons";
 import MeasurementDiagram from "@/components/measurement-diagram";
 import ProductImage from "@/components/product-image";
+import { StarsDisplay } from "@/components/star-rating";
 import { useBag } from "@/lib/bag-context";
 import { formatPriceBdt, stockLabel } from "@/lib/format";
 import {
   faceShapeChipLabel,
   type ProductDetail,
 } from "@/lib/supabase/catalog";
+import type { ReviewAggregate } from "@/lib/supabase/reviews";
 import { useState } from "react";
 
 /**
@@ -51,8 +53,11 @@ const MEASUREMENT_LABELS = [
 
 export default function ProductDetailClient({
   product,
+  reviewAggregate,
 }: {
   product: ProductDetail;
+  /** Approved-review aggregate, or null when the fetch failed. */
+  reviewAggregate?: ReviewAggregate | null;
 }) {
   const { addItem } = useBag();
   const [selectedImage, setSelectedImage] = useState(0);
@@ -176,6 +181,26 @@ export default function ProductDetailClient({
         <p className="mt-4 text-2xl font-semibold text-text">
           {formatPriceBdt(product.price_bdt)}
         </p>
+        {/* S-7: buy-panel rating line — only once real approved
+            reviews exist (no "0.0", no rating without reviews, D-8). */}
+        {reviewAggregate &&
+        reviewAggregate.reviewCount > 0 &&
+        reviewAggregate.averageRating !== null ? (
+          <p className="mt-2 flex items-center gap-2">
+            <StarsDisplay
+              average={reviewAggregate.averageRating}
+              count={reviewAggregate.reviewCount}
+            />
+            <a
+              href="#reviews"
+              className="text-base font-semibold text-action hover:text-action-hover"
+            >
+              {reviewAggregate.averageRating.toFixed(1)} (
+              {reviewAggregate.reviewCount} review
+              {reviewAggregate.reviewCount === 1 ? "" : "s"})
+            </a>
+          </p>
+        ) : null}
         <p
           className={`mt-2 text-base font-semibold ${
             outOfStock ? "text-error" : "text-stock-in"

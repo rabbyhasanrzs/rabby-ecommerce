@@ -1,17 +1,32 @@
 import CatalogueUnavailable from "@/components/catalogue-unavailable";
 import ProductDetailClient from "@/components/product-detail-client";
+import ReviewsSection from "@/components/reviews";
 import {
   CatalogueUnavailableError,
   getProductBySlug,
   isValidSlug,
 } from "@/lib/supabase/catalog";
+import { isValidOrderReference } from "@/lib/supabase/orders";
+import {
+  emptyReviewAggregate,
+  getProductReviews,
+} from "@/lib/supabase/reviews";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { Suspense } from "react";
 
 /**
- * Product detail — S-1 catalogue read-only.
+ * Product detail — S-1 catalogue read-only, S-7 reviews.
+ *
+ * Reviews (S-7, T-70): the page fetches the approved-review
+ * aggregate alongside the product and renders the reviews section
+ * below the buy panel — only when at least one approved review
+ * exists, or when the buyer arrived from the track-order invite
+ * (?ref=<valid order reference>), which pre-fills the review form.
+ * A reviews fetch failure never breaks the page: the section is
+ * skipped (or the form still renders from an empty aggregate when
+ * ?ref= is present).
  *
  * Build-safety: the Supabase tables do not exist yet (the SQL runs
  * later in the dashboard), so this route must never fetch at build
@@ -31,7 +46,14 @@ import { Suspense } from "react";
  */
 export const instant = false;
 
-async function ProductContent({ slug }: { slug: string }) {
+async function ProductContent({
+  slug,
+  prefilledReference,
+}: {
+  slug: string;
+  /** A valid order reference from ?ref=… (track-order invite). */
+  prefilledReference: string | null;
+}) {
   let product: Awaited<ReturnType<typeof getProductBySlug>>;
   try {
     product = await getProductBySlug(slug);
@@ -46,6 +68,19 @@ async function ProductContent({ slug }: { slug: string }) {
     notFound();
   }
 
+  // Reviews are additive: a failure here never breaks the product
+  // page — the page renders without reviews instead. The only
+  // exception is a buyer who arrived to write one (?ref=…): the
+  // form still renders, backed by an empty aggregate.
+  let aggregate: Awaited<ReturnType<typeof getProductReviews>> | null = null;
+  try {
+    aggregate = await getProductReviews(slug);
+  } catch {
+    aggregate = null;
+  }
+  const effectiveAggregate =
+    aggregate ?? (prefilledReference ? emptyReviewAggregate(slug) : null);
+
   return (
     <>
       <nav aria-label="Breadcrumb" className="mb-6">
@@ -56,15 +91,25 @@ async function ProductContent({ slug }: { slug: string }) {
           ← Back to sunglasses
         </Link>
       </nav>
-      <ProductDetailClient product={product} />
+      <ProductDetailClient product={product} reviewAggregate={aggregate} />
+      {effectiveAggregate ? (
+        <ReviewsSection
+          aggregate={effectiveAggregate}
+          productSlug={product.slug}
+          productName={product.name}
+          prefilledReference={prefilledReference}
+        />
+      ) : null}
     </>
   );
 }
 
 export default async function ProductPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   // Request time only: no static shell is flushed before this, so
   // notFound() below still sets a real HTTP 404.
@@ -75,6 +120,16 @@ export default async function ProductPage({
     notFound();
   }
 
+  // ?ref=… pre-fills the review form (track-order invite after
+  // delivery). Anything that is not a valid reference is ignored —
+  // the form is never prefilled with untrusted input.
+  const rawRef = (await searchParams).ref;
+  const refValue = Array.isArray(rawRef) ? rawRef[0] : rawRef;
+  const prefilledReference =
+    refValue !== undefined && isValidOrderReference(refValue)
+      ? refValue.trim()
+      : null;
+
   return (
     <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-12 md:px-8">
       <Suspense
@@ -84,7 +139,7 @@ export default async function ProductPage({
           </p>
         }
       >
-        <ProductContent slug={slug} />
+        <ProductContent slug={slug} prefilledReference={prefilledReference} />
       </Suspense>
     </main>
   );

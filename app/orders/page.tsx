@@ -13,6 +13,7 @@ import {
   paymentStatusLabel,
   type OrderDetail,
 } from "@/lib/supabase/orders";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 
@@ -363,6 +364,37 @@ function TrackOrderContent() {
                   Cancel order
                 </button>
               )}
+            </section>
+          ) : null}
+
+          {/* S-7: review invite — only once the order is delivered.
+              Each product links to its page with the reference
+              prefilled (?ref=…), so the buyer can review it there. */}
+          {order.status === "delivered" ? (
+            <section aria-label="Leave a review">
+              <h2 className="font-display text-xl font-bold text-text">
+                How was your order?
+              </h2>
+              <p className="mt-2 text-base text-text-secondary">
+                Your order has been delivered — tell other buyers what
+                you thought.
+              </p>
+              <ul className="mt-3 space-y-2">
+                {[
+                  ...new Map(
+                    order.items.map((item) => [item.productSlug, item]),
+                  ).values(),
+                ].map((item) => (
+                  <li key={item.productSlug}>
+                    <Link
+                      href={`/product/${item.productSlug}?ref=${order.reference}`}
+                      className="text-base font-semibold text-action hover:text-action-hover"
+                    >
+                      Review {item.productName}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
             </section>
           ) : null}
         </div>

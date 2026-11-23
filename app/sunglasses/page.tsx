@@ -6,6 +6,10 @@ import {
   listProducts,
   parseListingParams,
 } from "@/lib/supabase/catalog";
+import {
+  getProductReviewAggregates,
+  type ProductReviewAggregate,
+} from "@/lib/supabase/reviews";
 import Link from "next/link";
 import { connection } from "next/server";
 import { Suspense } from "react";
@@ -58,6 +62,18 @@ async function ListingContent({
       return <CatalogueUnavailable />;
     }
     throw error;
+  }
+
+  // S-7: one batch aggregate call for the whole listing (never N+1).
+  // A reviews failure never breaks the listing — the cards render
+  // without ratings instead.
+  let aggregates = new Map<string, ProductReviewAggregate>();
+  try {
+    aggregates = await getProductReviewAggregates(
+      products.map((product) => product.slug),
+    );
+  } catch {
+    aggregates = new Map<string, ProductReviewAggregate>();
   }
 
   const hasActiveFilters =
@@ -209,7 +225,11 @@ async function ListingContent({
       ) : (
         <ul className="mt-6 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {products.map((product) => (
-            <ProductCard key={product.id} product={product} />
+            <ProductCard
+              key={product.id}
+              product={product}
+              reviewAggregate={aggregates.get(product.slug) ?? null}
+            />
           ))}
         </ul>
       )}

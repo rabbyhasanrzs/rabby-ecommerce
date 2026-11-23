@@ -121,3 +121,27 @@ export function ChevronRightIcon({ className }: IconProps) {
     </Svg>
   );
 }
+
+/**
+ * Five-point star — reviews (S-7). Filled (solid currentColor) or
+ * outline (stroke). NOT part of the stroke-based Svg wrapper above:
+ * a filled star needs fill, not stroke.
+ */
+export function StarIcon({
+  filled,
+  className,
+}: IconProps & { filled: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      fill={filled ? "currentColor" : "none"}
+      stroke={filled ? "none" : "currentColor"}
+      strokeWidth={filled ? 0 : 1.75}
+      strokeLinejoin="round"
+      className={className}
+    >
+      <path d="M12 17.27 18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z" />
+    </svg>
+  );
+}
