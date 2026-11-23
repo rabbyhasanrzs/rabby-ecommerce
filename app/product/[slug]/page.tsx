@@ -1,15 +1,20 @@
 import CatalogueUnavailable from "@/components/catalogue-unavailable";
 import ProductDetailClient from "@/components/product-detail-client";
+import RelatedProducts from "@/components/related-products";
 import ReviewsSection from "@/components/reviews";
 import {
   CatalogueUnavailableError,
   getProductBySlug,
+  getRelatedProducts,
   isValidSlug,
+  type ProductSummary,
 } from "@/lib/supabase/catalog";
 import { isValidOrderReference } from "@/lib/supabase/orders";
 import {
   emptyReviewAggregate,
+  getProductReviewAggregates,
   getProductReviews,
+  type ProductReviewAggregate,
 } from "@/lib/supabase/reviews";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -27,6 +32,12 @@ import { Suspense } from "react";
  * A reviews fetch failure never breaks the page: the section is
  * skipped (or the form still renders from an empty aggregate when
  * ?ref= is present).
+ *
+ * You May Also Like (S-7, T-70, cross-sell F13): the page fetches the
+ * related products alongside the reviews (same-category first, fill
+ * to 4 — see getRelatedProducts) and renders the row after the
+ * reviews section. A related-products fetch failure never breaks the
+ * page either — the section is skipped.
  *
  * Build-safety: the Supabase tables do not exist yet (the SQL runs
  * later in the dashboard), so this route must never fetch at build
@@ -46,7 +57,13 @@ import { Suspense } from "react";
  */
 export const instant = false;
 
-async function ProductContent({
+/**
+ * Exported for tests (same pattern as AdminDashboardPageContent):
+ * the test awaits this async component directly and renders the
+ * resolved JSX, because the client test renderer cannot render an
+ * async Server Component behind Suspense.
+ */
+export async function ProductContent({
   slug,
   prefilledReference,
 }: {
@@ -81,6 +98,26 @@ async function ProductContent({
   const effectiveAggregate =
     aggregate ?? (prefilledReference ? emptyReviewAggregate(slug) : null);
 
+  // Related products are additive, like reviews: a fetch failure never
+  // breaks the product page — the section is skipped instead. One
+  // batched catalogue read + one batch aggregate call for the row.
+  let related: ProductSummary[] = [];
+  try {
+    related = await getRelatedProducts(product);
+  } catch {
+    related = [];
+  }
+  let relatedAggregates = new Map<string, ProductReviewAggregate>();
+  if (related.length > 0) {
+    try {
+      relatedAggregates = await getProductReviewAggregates(
+        related.map((p) => p.slug),
+      );
+    } catch {
+      relatedAggregates = new Map<string, ProductReviewAggregate>();
+    }
+  }
+
   return (
     <>
       <nav aria-label="Breadcrumb" className="mb-6">
@@ -99,6 +136,9 @@ async function ProductContent({
           productName={product.name}
           prefilledReference={prefilledReference}
         />
+      ) : null}
+      {related.length > 0 ? (
+        <RelatedProducts products={related} aggregates={relatedAggregates} />
       ) : null}
     </>
   );

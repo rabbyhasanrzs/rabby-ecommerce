@@ -4,9 +4,12 @@ import {
   CatalogueUnavailableError,
   faceShapeChipLabel,
   getProductBySlug,
+  getRelatedProducts,
   isValidSlug,
   listProducts,
   parseListingParams,
+  pickRelatedProducts,
+  RELATED_PRODUCTS_LIMIT,
   sortProducts,
   type ListingParams,
   type ProductSummary,
@@ -339,5 +342,177 @@ describe("RLS-safe read path (mocked client)", () => {
       fakeClient as unknown as ReturnType<typeof getSupabaseClient>,
     );
     await expect(getProductBySlug("no-such-product")).resolves.toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Related products — S-7 cross-sell (F13, 1.x-2)
+// ---------------------------------------------------------------------------
+
+/**
+ * The 8 seed products (0001_s1_catalogue.sql): 3 Women, 3 Men,
+ * 2 Polarized — one out of stock (Futuristic A). Mirrors the real
+ * demo catalogue so the fill behaviour is tested at real size.
+ */
+function seedCatalogue(): ProductSummary[] {
+  const rows: Array<{
+    id: string;
+    slug: string;
+    name: string;
+    category_id: string;
+    category_slug: string;
+    category_name: string;
+    price_bdt: number;
+    stock_total: number;
+    created_at: string;
+  }> = [
+    { id: "1", slug: "sample-round-a", name: "SAMPLE Round A", category_id: "c1", category_slug: "women", category_name: "Women", price_bdt: 950, stock_total: 12, created_at: "2026-11-18T00:00:00Z" },
+    { id: "2", slug: "sample-hexagon-a", name: "SAMPLE Hexagon A", category_id: "c1", category_slug: "women", category_name: "Women", price_bdt: 1100, stock_total: 2, created_at: "2026-11-18T00:00:00Z" },
+    { id: "3", slug: "sample-red-lens-a", name: "SAMPLE Red Lens A", category_id: "c1", category_slug: "women", category_name: "Women", price_bdt: 850, stock_total: 18, created_at: "2026-11-18T00:00:00Z" },
+    { id: "4", slug: "sample-aviator-a", name: "SAMPLE Aviator A", category_id: "c2", category_slug: "men", category_name: "Men", price_bdt: 1450, stock_total: 8, created_at: "2026-11-19T00:00:00Z" },
+    { id: "5", slug: "sample-square-gold-a", name: "SAMPLE Square Gold A", category_id: "c2", category_slug: "men", category_name: "Men", price_bdt: 2400, stock_total: 5, created_at: "2026-11-19T00:00:00Z" },
+    { id: "6", slug: "sample-futuristic-a", name: "SAMPLE Futuristic A", category_id: "c2", category_slug: "men", category_name: "Men", price_bdt: 3200, stock_total: 0, created_at: "2026-11-20T00:00:00Z" },
+    { id: "7", slug: "sample-blue-tint-a", name: "SAMPLE Blue Tint A", category_id: "c3", category_slug: "polarized", category_name: "Polarized", price_bdt: 1750, stock_total: 15, created_at: "2026-11-20T00:00:00Z" },
+    { id: "8", slug: "sample-tortoise-a", name: "SAMPLE Tortoise A", category_id: "c3", category_slug: "polarized", category_name: "Polarized", price_bdt: 1900, stock_total: 7, created_at: "2026-11-20T00:00:00Z" },
+  ];
+  return rows.map((row) => ({
+    ...row,
+    description: `${row.name} sunglasses`,
+    is_demo: true,
+    primary_image: `/images/${row.slug}.webp`,
+  }));
+}
+
+describe("pickRelatedProducts", () => {
+  it("puts same-category products first, then fills to 4, never the current product", () => {
+    const catalogue = seedCatalogue();
+    const current = catalogue.find((p) => p.slug === "sample-round-a")!;
+    const related = pickRelatedProducts(current, catalogue);
+    // Women first (Hexagon A, Red Lens A — featured order = name),
+    // then the fill: Men before Polarized (featured = category, then name).
+    expect(related.map((p) => p.slug)).toEqual([
+      "sample-hexagon-a",
+      "sample-red-lens-a",
+      "sample-aviator-a",
+      "sample-futuristic-a",
+    ]);
+    expect(related).not.toContain(current);
+  });
+
+  it("fills to 4 from other categories when the category has only one other product", () => {
+    const catalogue = seedCatalogue();
+    const current = catalogue.find((p) => p.slug === "sample-blue-tint-a")!;
+    const related = pickRelatedProducts(current, catalogue);
+    // Polarized has one other product (Tortoise A), then the fill.
+    expect(related.map((p) => p.slug)).toEqual([
+      "sample-tortoise-a",
+      "sample-aviator-a",
+      "sample-futuristic-a",
+      "sample-square-gold-a",
+    ]);
+  });
+
+  it("includes out-of-stock products (the card shows their disabled state)", () => {
+    const catalogue = seedCatalogue();
+    const current = catalogue.find((p) => p.slug === "sample-aviator-a")!;
+    const related = pickRelatedProducts(current, catalogue);
+    // Futuristic A (stock 0, same category Men) is in the row.
+    expect(related.map((p) => p.slug)).toContain("sample-futuristic-a");
+  });
+
+  it("returns fewer than 4 when the catalogue is tiny, and empty when it holds only the current product", () => {
+    const catalogue = seedCatalogue();
+    const current = catalogue[0];
+    const tiny = [current, catalogue[1]];
+    expect(pickRelatedProducts(current, tiny).map((p) => p.slug)).toEqual([
+      "sample-hexagon-a",
+    ]);
+    expect(pickRelatedProducts(current, [current])).toEqual([]);
+    expect(pickRelatedProducts(current, [])).toEqual([]);
+  });
+
+  it("respects the limit and is deterministic (same input, same order)", () => {
+    const catalogue = seedCatalogue();
+    const current = catalogue.find((p) => p.slug === "sample-round-a")!;
+    expect(pickRelatedProducts(current, catalogue, 2).map((p) => p.slug)).toEqual([
+      "sample-hexagon-a",
+      "sample-red-lens-a",
+    ]);
+    expect(pickRelatedProducts(current, catalogue, 0)).toEqual([]);
+    expect(RELATED_PRODUCTS_LIMIT).toBe(4);
+    expect(pickRelatedProducts(current, catalogue)).toEqual(
+      pickRelatedProducts(current, catalogue),
+    );
+  });
+
+  it("treats a product with no category as fill-only (no same-category group)", () => {
+    const catalogue = seedCatalogue();
+    const uncategorised: ProductSummary = {
+      ...catalogue[0],
+      id: "9",
+      slug: "sample-uncategorised-a",
+      name: "SAMPLE Uncategorised A",
+      category_id: null,
+      category_slug: null,
+      category_name: null,
+    };
+    const related = pickRelatedProducts(uncategorised, [
+      ...catalogue,
+      uncategorised,
+    ]);
+    expect(related).toHaveLength(4);
+    expect(related.map((p) => p.slug)).toEqual([
+      "sample-aviator-a",
+      "sample-futuristic-a",
+      "sample-square-gold-a",
+      "sample-blue-tint-a",
+    ]);
+  });
+});
+
+describe("getRelatedProducts (mocked client)", () => {
+  it("reads the active catalogue once and picks 4 related products", async () => {
+    const rows = seedCatalogue().map((p) => ({
+      ...p,
+      categories: { slug: p.category_slug, name: p.category_name },
+    }));
+    const fakeClient = {
+      from: (table: string) => {
+        if (table === "products") {
+          return makeBuilder({ data: rows, error: null });
+        }
+        return makeBuilder({
+          data: rows.map((p) => ({
+            product_id: p.id,
+            storage_path: p.primary_image,
+            is_primary: true,
+            sort_order: 1,
+          })),
+          error: null,
+        });
+      },
+    };
+    mockedGetClient.mockReturnValue(
+      fakeClient as unknown as ReturnType<typeof getSupabaseClient>,
+    );
+
+    const current = rows.find((p) => p.slug === "sample-round-a")!;
+    const related = await getRelatedProducts(current);
+    expect(related).toHaveLength(4);
+    expect(related.map((p) => p.slug)).toEqual([
+      "sample-hexagon-a",
+      "sample-red-lens-a",
+      "sample-aviator-a",
+      "sample-futuristic-a",
+    ]);
+    expect(related[0]?.primary_image).toBe("/images/sample-hexagon-a.webp");
+  });
+
+  it("throws CatalogueUnavailableError when no client is configured", async () => {
+    mockedGetClient.mockReturnValue(null);
+    const current = seedCatalogue()[0];
+    await expect(getRelatedProducts(current)).rejects.toBeInstanceOf(
+      CatalogueUnavailableError,
+    );
   });
 });
