@@ -5,6 +5,7 @@ import {
 } from "@/lib/supabase/admin";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import { connection } from "next/server";
 
 /** S-6, T-61, S6-10: the admin auth pages are noindex. */
 export const metadata: Metadata = {
@@ -25,6 +26,17 @@ export const metadata: Metadata = {
 // `instant = false` opt-out as the login page).
 export const instant = false;
 export default async function AdminForgotPasswordPage() {
+  // Request-time rendering FIRST, before the session read:
+  // checkAdminAccess() reads the session with supabase.auth.getUser(),
+  // and @supabase/auth-js checks the token expiry with Date.now() on
+  // every such call — Next 16 (Cache Components) flags that as an
+  // unstable value during prerendering ("Route ... encountered the
+  // unstable value `Date.now()` while prerendering"). Same fix as the
+  // (protected) layout (PR #34): connection() before the session read.
+  // The try/catch below cannot do this job — it swallows the dynamic
+  // bailout, so the read still runs during the prerender attempt.
+  await connection();
+
   // Already signed in as a verified admin? Skip the form.
   try {
     const supabase = await createAdminClient();
