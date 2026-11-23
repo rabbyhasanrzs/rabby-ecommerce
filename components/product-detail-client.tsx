@@ -5,6 +5,7 @@ import { ChevronLeftIcon, ChevronRightIcon } from "@/components/icons";
 import MeasurementDiagram from "@/components/measurement-diagram";
 import ProductImage from "@/components/product-image";
 import { StarsDisplay } from "@/components/star-rating";
+import WishlistButton from "@/components/wishlist-button";
 import { useBag } from "@/lib/bag-context";
 import { formatPriceBdt, stockLabel } from "@/lib/format";
 import {
@@ -304,29 +305,47 @@ export default function ProductDetailClient({
         ) : null}
 
         {outOfStock ? (
-          <p className="mt-8 rounded-md border border-border bg-background-subtle px-4 py-3 text-base text-text-secondary">
-            This product is currently out of stock. Bag and checkout arrive
-            in S-2.
-          </p>
+          <>
+            <p className="mt-8 rounded-md border border-border bg-background-subtle px-4 py-3 text-base text-text-secondary">
+              This product is currently out of stock. Bag and checkout arrive
+              in S-2.
+            </p>
+            {/* S-7: an out-of-stock product can still be saved — the
+                wishlist page keeps it visible with "Out of Stock". */}
+            <WishlistButton
+              slug={product.slug}
+              productName={product.name}
+              variant="pdp"
+              className="mt-4 w-full"
+            />
+          </>
         ) : (
-          <button
-            type="button"
-            onClick={() =>
-              addItem(
-                {
-                  slug: product.slug,
-                  name: product.name,
-                  priceBdt: product.price_bdt,
-                  image: currentImage?.storage_path ?? null,
-                  variantColour: variant?.colour ?? null,
-                },
-                product.stock_total,
-              )
-            }
-            className="mt-8 flex min-h-11 w-full items-center justify-center rounded-md bg-action px-4 py-3 text-base font-semibold text-text-inverse hover:bg-action-hover"
-          >
-            Add to Bag
-          </button>
+          <div className="mt-8 flex gap-3">
+            <button
+              type="button"
+              onClick={() =>
+                addItem(
+                  {
+                    slug: product.slug,
+                    name: product.name,
+                    priceBdt: product.price_bdt,
+                    image: currentImage?.storage_path ?? null,
+                    variantColour: variant?.colour ?? null,
+                  },
+                  product.stock_total,
+                )
+              }
+              className="flex min-h-11 flex-1 items-center justify-center rounded-md bg-action px-4 py-3 text-base font-semibold text-text-inverse hover:bg-action-hover"
+            >
+              Add to Bag
+            </button>
+            {/* S-7: wishlist toggle beside Add to Bag, secondary style. */}
+            <WishlistButton
+              slug={product.slug}
+              productName={product.name}
+              variant="pdp"
+            />
+          </div>
         )}
       </div>
     </div>

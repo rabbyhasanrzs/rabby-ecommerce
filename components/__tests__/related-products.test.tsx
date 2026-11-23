@@ -2,7 +2,19 @@ import RelatedProducts from "@/components/related-products";
 import type { ProductSummary } from "@/lib/supabase/catalog";
 import type { ProductReviewAggregate } from "@/lib/supabase/reviews";
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+// S-7: RelatedProducts renders ProductCards, which carry a wishlist
+// heart (useWishlist).
+vi.mock("@/lib/wishlist-context", () => ({
+  useWishlist: () => ({
+    slugs: [],
+    count: 0,
+    loaded: true,
+    isSaved: () => false,
+    toggle: vi.fn(),
+  }),
+}));
 
 function product(
   id: string,

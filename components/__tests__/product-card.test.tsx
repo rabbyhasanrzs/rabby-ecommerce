@@ -1,7 +1,10 @@
 import ProductCard from "@/components/product-card";
 import type { ProductSummary } from "@/lib/supabase/catalog";
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { WishlistProvider } from "@/lib/wishlist-context";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { beforeEach, describe, expect, it } from "vitest";
+
+const STORAGE_KEY = "rabby-wishlist-v1";
 
 const SAMPLE: ProductSummary = {
   id: "1",
@@ -18,13 +21,23 @@ const SAMPLE: ProductSummary = {
   primary_image: "/images/sample-round-a.webp",
 };
 
+beforeEach(() => {
+  window.localStorage.clear();
+});
+
+function renderCard(product: ProductSummary = SAMPLE) {
+  return render(
+    <WishlistProvider>
+      <ul>
+        <ProductCard product={product} />
+      </ul>
+    </WishlistProvider>,
+  );
+}
+
 describe("ProductCard polish (S-5)", () => {
   it("keeps the existing content — name, category, integer BDT price, stock in words", () => {
-    render(
-      <ul>
-        <ProductCard product={SAMPLE} />
-      </ul>,
-    );
+    renderCard();
 
     expect(screen.getByText("SAMPLE Round A")).toBeInTheDocument();
     expect(screen.getByText("Women")).toBeInTheDocument();
@@ -36,11 +49,7 @@ describe("ProductCard polish (S-5)", () => {
   });
 
   it("has the prototype finish — subtle shadow, hover lift, visible focus ring", () => {
-    render(
-      <ul>
-        <ProductCard product={SAMPLE} />
-      </ul>,
-    );
+    renderCard();
 
     const card = screen
       .getByRole("link", { name: /SAMPLE Round A/ })
@@ -53,11 +62,7 @@ describe("ProductCard polish (S-5)", () => {
   });
 
   it("scales the image very slightly on hover, without hiding the price or stock", () => {
-    render(
-      <ul>
-        <ProductCard product={SAMPLE} />
-      </ul>,
-    );
+    renderCard();
 
     const image = screen.getByAltText("SAMPLE Round A");
     expect(image.className).toContain("group-hover:scale-[1.02]");
@@ -67,12 +72,51 @@ describe("ProductCard polish (S-5)", () => {
   });
 
   it("shows Out of Stock in words when stock is zero", () => {
-    render(
-      <ul>
-        <ProductCard product={{ ...SAMPLE, stock_total: 0 }} />
-      </ul>,
-    );
+    renderCard({ ...SAMPLE, stock_total: 0 });
 
     expect(screen.getByText("Out of Stock")).toBeInTheDocument();
+  });
+});
+
+describe("ProductCard wishlist heart (S-7)", () => {
+  it("renders a heart toggle that is NOT nested inside the card link", () => {
+    renderCard();
+
+    const heart = screen.getByRole("button", {
+      name: "Save SAMPLE Round A to wishlist",
+    });
+    // A <button> inside an <a> is invalid HTML and would navigate
+    // on activation — the heart is a sibling of the link instead.
+    expect(heart.closest("a")).toBeNull();
+    expect(heart).toHaveAttribute("aria-pressed", "false");
+    expect(heart).toHaveAttribute("type", "button");
+    // The card link itself is untouched.
+    expect(
+      screen.getByRole("link", { name: /SAMPLE Round A/ }),
+    ).toHaveAttribute("href", "/product/sample-round-a");
+  });
+
+  it("clicking the heart saves the product without navigating", async () => {
+    renderCard();
+
+    const heart = screen.getByRole("button", {
+      name: "Save SAMPLE Round A to wishlist",
+    });
+    fireEvent.click(heart);
+
+    expect(
+      await screen.findByRole("button", {
+        name: "Remove SAMPLE Round A from wishlist",
+      }),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(
+      JSON.parse(
+        window.localStorage.getItem(STORAGE_KEY) ?? "[]",
+      ) as string[],
+    ).toEqual(["sample-round-a"]);
+    // Still on the same page — no navigation happened.
+    expect(
+      screen.getByRole("link", { name: /SAMPLE Round A/ }),
+    ).toHaveAttribute("href", "/product/sample-round-a");
   });
 });

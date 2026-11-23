@@ -33,6 +33,18 @@ vi.mock("@/components/product-detail-client", () => ({
   default: () => <div data-testid="product-detail-client">Product detail</div>,
 }));
 
+// S-7: the "You May Also Like" row renders real ProductCards, which
+// carry a wishlist heart (useWishlist).
+vi.mock("@/lib/wishlist-context", () => ({
+  useWishlist: () => ({
+    slugs: [],
+    count: 0,
+    loaded: true,
+    isSaved: () => false,
+    toggle: vi.fn(),
+  }),
+}));
+
 /**
  * Mock only the Supabase reads; the real isValidSlug stays intact, so
  * the test proves the page still 404s on a bad slug.
