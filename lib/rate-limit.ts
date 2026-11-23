@@ -43,6 +43,16 @@ export const BAG_RATE_LIMIT = 30;
 export const BAG_RATE_WINDOW_MS = 60 * 1000;
 
 /**
+ * Coupon validation: 10 attempts per 10 minutes per IP (S-7, T-70).
+ * Same budget as checkout / order lookup — the endpoint answers a
+ * yes/no about a code, so it must not be enumerable by hammering.
+ * Checked AFTER the schema parse, so malformed requests never
+ * consume budget (same pattern as checkout).
+ */
+export const COUPON_RATE_LIMIT = 10;
+export const COUPON_RATE_WINDOW_MS = 10 * 60 * 1000;
+
+/**
  * Admin sign-in / MFA verify: 10 attempts per 10 minutes per IP
  * (S-6, T-61, S6-05). Server actions have no Request object, so the
  * caller builds the key from next/headers (see login-actions.ts).

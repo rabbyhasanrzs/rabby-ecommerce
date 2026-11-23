@@ -29,6 +29,19 @@ export interface OrderTotals {
 }
 
 /**
+ * Totals with a coupon applied (S-7, T-70): OrderTotals plus the
+ * Taka amount taken off. Mirrors the server math in migration 0009
+ * §4 — discount first, then tax on the DISCOUNTED subtotal:
+ *   discount = round(subtotal * percentOff / 100)
+ *   tax      = round((subtotal - discount) * taxRate / 100)
+ *   total    = (subtotal - discount) + tax + deliveryFee
+ * All amounts are integer Taka.
+ */
+export interface DiscountedOrderTotals extends OrderTotals {
+  discountBdt: number;
+}
+
+/**
  * Pricing settings, as read from the site_settings row. This is a
  * structural type on purpose: lib/site-settings.ts is server-only,
  * so this module (imported by client components) must not import it
@@ -56,6 +69,41 @@ export function computeTotals(
     taxBdt,
     deliveryFeeBdt,
     totalBdt: subtotalBdt + taxBdt + deliveryFeeBdt,
+  };
+}
+
+/**
+ * Totals with a coupon applied (S-7, T-70) — the display-side twin
+ * of the server math in migration 0009 §4. Discount first, then tax
+ * on the DISCOUNTED subtotal; integer BDT in, integer BDT out.
+ * computeTotals() above is untouched (used elsewhere); with
+ * percentOff 0 this returns exactly computeTotals() plus
+ * discountBdt 0.
+ */
+export function computeDiscountedTotals(
+  subtotalBdt: number,
+  zone: DeliveryZone,
+  percentOff: number,
+  settings?: PricingSettings,
+): DiscountedOrderTotals {
+  if (!Number.isInteger(subtotalBdt) || subtotalBdt < 0) {
+    throw new Error("Subtotal must be a non-negative integer (BDT).");
+  }
+  if (!Number.isInteger(percentOff) || percentOff < 0 || percentOff > 100) {
+    throw new Error("Percent off must be an integer between 0 and 100.");
+  }
+  const taxRatePercent = settings?.taxRatePercent ?? DEMO_TAX_RATE_PERCENT;
+  const discountBdt = Math.round((subtotalBdt * percentOff) / 100);
+  const discountedSubtotal = subtotalBdt - discountBdt;
+  const taxBdt = Math.round((discountedSubtotal * taxRatePercent) / 100);
+  const deliveryFeeBdt =
+    settings?.deliveryFees[zone] ?? DELIVERY_OPTIONS[zone].feeBdt;
+  return {
+    subtotalBdt,
+    discountBdt,
+    taxBdt,
+    deliveryFeeBdt,
+    totalBdt: discountedSubtotal + taxBdt + deliveryFeeBdt,
   };
 }
 

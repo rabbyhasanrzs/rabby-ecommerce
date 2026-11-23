@@ -67,6 +67,14 @@ export interface OrderDetail {
   taxBdt: number;
   deliveryFeeBdt: number;
   totalBdt: number;
+  /**
+   * S-7 (migration 0009): the coupon used on this order, if any.
+   * Optional so order fixtures written before S-7 still typecheck;
+   * lookupOrder always populates them (null / 0 when no code was
+   * used — the lookup RPC returns the columns on every row).
+   */
+  discountCode?: string | null;
+  discountBdt?: number;
   createdAt: string;
   items: OrderItemDetail[];
   events: OrderStatusEvent[];
@@ -220,6 +228,16 @@ function mapCreateOrderError(error: { message?: string }): GuestOrderError | nul
       "This payment method is currently unavailable. Please choose another.",
     );
   }
+  // S-7 (migration 0009): create_guest_order raises 'coupon_invalid'
+  // for a missing OR an inactive code — one message for both, so a
+  // code can never be enumerated by probing (same as the validate
+  // endpoint). Copy of the payment_method_disabled pattern above.
+  if (message.startsWith("coupon_invalid")) {
+    return new GuestOrderError(
+      "VALIDATION",
+      "This coupon code isn't valid. Check the code and try again.",
+    );
+  }
   if (message.startsWith("invalid_")) {
     return new GuestOrderError(
       "VALIDATION",
@@ -370,9 +388,64 @@ export async function validateBagItems(
 export interface CreateGuestOrderInput {
   customer: CheckoutFormData;
   items: { slug: string; variantColour: string | null; quantity: number }[];
+  /**
+   * S-7: the coupon code, already normalised (trim + uppercase) by
+   * the checkout request schema. Optional — absent means no coupon
+   * (p_discount_code NULL). The SQL function re-validates the code
+   * and raises 'coupon_invalid' when it is missing or inactive.
+   */
+  discountCode?: string;
 }
 
-/** Create the order transactionally via create_guest_order (migration 0004, 5 arguments). */
+/**
+ * Thrown when validate_discount_code rejects a code (S-7, migration
+ * 0009). One plain-words message for a missing code and an inactive
+ * code alike — the route returns it as a 400, never revealing which
+ * case failed.
+ */
+export class CouponInvalidError extends Error {
+  constructor() {
+    super("This coupon code isn't valid. Check the code and try again.");
+    this.name = "CouponInvalidError";
+  }
+}
+
+/**
+ * Check one coupon code against validate_discount_code (migration
+ * 0009, SECURITY DEFINER — discount_codes has no anon policy, so the
+ * anon client can only reach it through this function). Returns the
+ * percent off (1–100). Throws CouponInvalidError for a missing or
+ * inactive code, SupabaseNotConfiguredError when the env vars are
+ * missing, and a generic Error for anything else.
+ */
+export async function validateDiscountCode(
+  code: string,
+): Promise<{ percentOff: number }> {
+  const supabase = requireClient();
+
+  const { data, error } = await supabase.rpc("validate_discount_code", {
+    p_code: code,
+  });
+  if (error) {
+    if ((error.message ?? "").startsWith("coupon_invalid")) {
+      throw new CouponInvalidError();
+    }
+    throw new Error("Coupon validation failed. Please try again.");
+  }
+  // Migration 0009: RETURNS int — the percent off, 1..100, per the
+  // table CHECK. Anything else is a broken contract, not a bad code.
+  if (
+    typeof data !== "number" ||
+    !Number.isInteger(data) ||
+    data < 1 ||
+    data > 100
+  ) {
+    throw new Error("Coupon validation failed. Please try again.");
+  }
+  return { percentOff: data };
+}
+
+/** Create the order transactionally via create_guest_order (migration 0009, 6 arguments). */
 export async function createGuestOrder(
   input: CreateGuestOrderInput,
 ): Promise<{ reference: string; totalBdt: number }> {
@@ -394,6 +467,11 @@ export async function createGuestOrder(
     // (they start with "invalid_").
     p_payment_reference: input.customer.paymentReference ?? null,
     p_payment_sender: input.customer.paymentSender ?? null,
+    // S-7: the coupon code (null when no coupon). The SQL function
+    // normalises it, looks it up, raises 'coupon_invalid' when it is
+    // missing or inactive, and stores code + discount on the order.
+    // 'coupon_invalid' maps to VALIDATION via mapCreateOrderError.
+    p_discount_code: input.discountCode ?? null,
     p_items: input.items.map((item) => ({
       slug: item.slug,
       variant_colour: item.variantColour,
@@ -440,6 +518,10 @@ interface LookupOrderRow {
   tax_bdt: number;
   delivery_fee_bdt: number;
   total_bdt: number;
+  /** S-7 (migration 0009). Absent on rows returned by the pre-0009
+   *  lookup function — the mapping below falls back accordingly. */
+  discount_code?: string | null;
+  discount_bdt?: number;
   created_at: string;
   items: {
     product_slug: string;
@@ -497,6 +579,10 @@ export async function lookupOrder(
     taxBdt: row.tax_bdt,
     deliveryFeeBdt: row.delivery_fee_bdt,
     totalBdt: row.total_bdt,
+    // S-7 (migration 0009): null / 0 when no code was used, or when
+    // the database predates the migration.
+    discountCode: row.discount_code ?? null,
+    discountBdt: row.discount_bdt ?? 0,
     createdAt: row.created_at,
     items: (row.items ?? []).map((item) => ({
       productSlug: item.product_slug,

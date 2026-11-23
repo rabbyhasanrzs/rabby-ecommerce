@@ -260,4 +260,212 @@ describe("CheckoutForm", () => {
     expect(pushMock).not.toHaveBeenCalled();
     expect(clearBagMock).not.toHaveBeenCalled();
   });
+
+  it("applying a valid coupon shows the discount line and discounted total", async () => {
+    fetchMock
+      .mockResolvedValueOnce(settingsResponse)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          percentOff: 10,
+          discountBdt: 310,
+          totals: {
+            subtotalBdt: 3100,
+            discountBdt: 310,
+            taxBdt: 140,
+            deliveryFeeBdt: 60,
+            totalBdt: 2990,
+          },
+        }),
+      });
+    render(<CheckoutForm />);
+
+    // Lowercase is uppercased on submit.
+    fireEvent.change(screen.getByLabelText("Coupon code"), {
+      target: { value: "re518" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply coupon code" }));
+
+    expect(await screen.findByText("Discount (RE518)")).toBeInTheDocument();
+    expect(screen.getByText("−৳310")).toBeInTheDocument();
+    // ৳3,100 − ৳310 = ৳2,790; tax 5% on ৳2,790 = ৳140; + ৳60 = ৳2,990.
+    expect(screen.getByText("৳140")).toBeInTheDocument();
+    expect(screen.getByText("৳2,990")).toBeInTheDocument();
+    expect(screen.queryByText("৳3,315")).not.toBeInTheDocument();
+    expect(fetchMock.mock.calls[1]?.[0]).toBe("/api/coupons/validate");
+    expect(fetchMock.mock.calls[1]?.[1]?.body).toBe(
+      JSON.stringify({ code: "RE518", subtotalBdt: 3100, zone: "inside" }),
+    );
+  });
+
+  it("an invalid coupon shows the server's plain-words error and keeps undiscounted totals", async () => {
+    fetchMock
+      .mockResolvedValueOnce(settingsResponse)
+      .mockResolvedValueOnce({
+        ok: false,
+        json: async () => ({
+          ok: false,
+          error:
+            "This coupon code is not valid. Check the code and try again.",
+        }),
+      });
+    render(<CheckoutForm />);
+
+    fireEvent.change(screen.getByLabelText("Coupon code"), {
+      target: { value: "WRONG" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply coupon code" }));
+
+    expect(
+      await screen.findByText(
+        "This coupon code is not valid. Check the code and try again.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Discount \(/)).not.toBeInTheDocument();
+    expect(screen.getByText("৳3,315")).toBeInTheDocument();
+  });
+
+  it("removing an applied coupon restores the undiscounted totals", async () => {
+    fetchMock
+      .mockResolvedValueOnce(settingsResponse)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          percentOff: 10,
+          discountBdt: 310,
+          totals: {
+            subtotalBdt: 3100,
+            discountBdt: 310,
+            taxBdt: 140,
+            deliveryFeeBdt: 60,
+            totalBdt: 2990,
+          },
+        }),
+      });
+    render(<CheckoutForm />);
+
+    fireEvent.change(screen.getByLabelText("Coupon code"), {
+      target: { value: "RE518" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply coupon code" }));
+    expect(await screen.findByText("Discount (RE518)")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove coupon code" }));
+
+    expect(screen.queryByText("Discount (RE518)")).not.toBeInTheDocument();
+    expect(screen.getByText("৳3,315")).toBeInTheDocument();
+    expect(screen.getByLabelText("Coupon code")).toHaveValue("");
+  });
+
+  it("submitting with an applied coupon includes discountCode in the checkout request", async () => {
+    fetchMock
+      .mockResolvedValueOnce(settingsResponse)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          percentOff: 10,
+          discountBdt: 310,
+          totals: {
+            subtotalBdt: 3100,
+            discountBdt: 310,
+            taxBdt: 140,
+            deliveryFeeBdt: 60,
+            totalBdt: 2990,
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ ok: true, items: [], issues: [] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          reference: "RB-2026-123456",
+          totalBdt: 2990,
+        }),
+      });
+    render(<CheckoutForm />);
+
+    fireEvent.change(screen.getByLabelText("Coupon code"), {
+      target: { value: "RE518" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply coupon code" }));
+    expect(await screen.findByText("Discount (RE518)")).toBeInTheDocument();
+
+    fillValidForm();
+    fireEvent.click(screen.getByRole("button", { name: "Place Order" }));
+
+    await waitFor(() => {
+      expect(pushMock).toHaveBeenCalledWith(
+        "/order/confirmation?ref=RB-2026-123456",
+      );
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock.mock.calls[1]?.[0]).toBe("/api/coupons/validate");
+    expect(fetchMock.mock.calls[2]?.[0]).toBe("/api/bag/validate");
+    expect(fetchMock.mock.calls[3]?.[0]).toBe("/api/checkout");
+    const checkoutBody = JSON.parse(
+      fetchMock.mock.calls[3]?.[1]?.body as string,
+    );
+    expect(checkoutBody.discountCode).toBe("RE518");
+    expect(checkoutRequestSchema.safeParse(checkoutBody).success).toBe(true);
+  });
+
+  it("a coupon error at place order surfaces the message and clears the applied code", async () => {
+    fetchMock
+      .mockResolvedValueOnce(settingsResponse)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          percentOff: 10,
+          discountBdt: 310,
+          totals: {
+            subtotalBdt: 3100,
+            discountBdt: 310,
+            taxBdt: 140,
+            deliveryFeeBdt: 60,
+            totalBdt: 2990,
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ ok: true, items: [], issues: [] }),
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        json: async () => ({
+          ok: false,
+          error:
+            "This coupon code is no longer valid. You can try another code or place your order without one.",
+          code: "invalid_coupon",
+        }),
+      });
+    render(<CheckoutForm />);
+
+    fireEvent.change(screen.getByLabelText("Coupon code"), {
+      target: { value: "RE518" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply coupon code" }));
+    expect(await screen.findByText("Discount (RE518)")).toBeInTheDocument();
+
+    fillValidForm();
+    fireEvent.click(screen.getByRole("button", { name: "Place Order" }));
+
+    expect(
+      await screen.findByText(
+        "This coupon code is no longer valid. You can try another code or place your order without one.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Discount (RE518)")).not.toBeInTheDocument();
+    expect(screen.getByText("৳3,315")).toBeInTheDocument();
+    expect(pushMock).not.toHaveBeenCalled();
+    expect(clearBagMock).not.toHaveBeenCalled();
+  });
 });

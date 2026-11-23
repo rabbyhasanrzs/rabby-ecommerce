@@ -188,6 +188,20 @@ async function AdminOrderDetailPageContent({
               {formatPriceBdt(subtotal)}
             </dd>
           </div>
+          {/* S-7: applied coupon code + discount, only when a coupon
+              was applied (discount_bdt / discount_code come from
+              admin_get_order). */}
+          {(order.discount_bdt ?? 0) > 0 ? (
+            <div className="flex justify-between gap-4">
+              <dt className="text-text-secondary">
+                Discount
+                {order.discount_code ? ` (${order.discount_code})` : ""}
+              </dt>
+              <dd className="font-semibold text-text">
+                −{formatPriceBdt(order.discount_bdt ?? 0)}
+              </dd>
+            </div>
+          ) : null}
           {order.tax_bdt !== null && order.tax_bdt !== undefined ? (
             <div className="flex justify-between gap-4">
               <dt className="text-text-secondary">Tax</dt>
