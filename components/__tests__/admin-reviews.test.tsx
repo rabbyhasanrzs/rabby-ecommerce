@@ -1,21 +1,30 @@
 import { AdminReviewsPageContent } from "@/app/admin/(protected)/reviews/page";
 import {
   approveReviewAction,
+  deleteReviewAction,
   rejectReviewAction,
 } from "@/app/admin/(protected)/reviews/actions";
-import { render, screen } from "@testing-library/react";
+import ReviewModerationButtons from "@/components/admin/review-moderation-buttons";
+import { requireAdmin } from "@/lib/supabase/admin";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { updateEqMock, revalidateMock, listMock } = vi.hoisted(() => ({
-  updateEqMock: vi.fn(),
-  revalidateMock: vi.fn(),
-  listMock: vi.fn(),
-}));
+const { updateEqMock, deleteEqMock, revalidateMock, listMock } = vi.hoisted(
+  () => ({
+    updateEqMock: vi.fn(),
+    deleteEqMock: vi.fn(),
+    revalidateMock: vi.fn(),
+    listMock: vi.fn(),
+  }),
+);
 
 vi.mock("@/lib/supabase/admin", () => ({
   requireAdmin: vi.fn(async () => ({ id: "admin-1" })),
   createAdminClient: () => ({
-    from: () => ({ update: () => ({ eq: updateEqMock }) }),
+    from: () => ({
+      update: () => ({ eq: updateEqMock }),
+      delete: () => ({ eq: deleteEqMock }),
+    }),
   }),
 }));
 
@@ -42,6 +51,7 @@ function formDataWithId(id: string): FormData {
 beforeEach(() => {
   vi.clearAllMocks();
   updateEqMock.mockResolvedValue({ error: null });
+  deleteEqMock.mockResolvedValue({ error: null });
 });
 
 // ---------------------------------------------------------------------------
@@ -78,6 +88,99 @@ describe("approveReviewAction / rejectReviewAction", () => {
     const result = await approveReviewAction(null, formDataWithId(REVIEW_ID));
     expect(result.ok).toBe(false);
     expect(result.message).toMatch(/couldn't be updated/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Server action: delete (hard delete — permanent, owner-approved)
+// ---------------------------------------------------------------------------
+
+describe("deleteReviewAction", () => {
+  it("deletes the review row and revalidates the queue", async () => {
+    const result = await deleteReviewAction(null, formDataWithId(REVIEW_ID));
+    expect(result.ok).toBe(true);
+    expect(result.message).toMatch(/deleted/);
+    expect(deleteEqMock).toHaveBeenCalledWith("id", REVIEW_ID);
+    expect(updateEqMock).not.toHaveBeenCalled();
+    expect(revalidateMock).toHaveBeenCalledWith("/admin/reviews");
+  });
+
+  it("rejects an invalid review id without touching the database", async () => {
+    const result = await deleteReviewAction(null, formDataWithId("not-a-uuid"));
+    expect(result.ok).toBe(false);
+    expect(deleteEqMock).not.toHaveBeenCalled();
+  });
+
+  it("returns a plain-words error when the delete fails", async () => {
+    deleteEqMock.mockResolvedValue({ error: { message: "boom" } });
+    const result = await deleteReviewAction(null, formDataWithId(REVIEW_ID));
+    expect(result.ok).toBe(false);
+    expect(result.message).toMatch(/couldn't be deleted/);
+  });
+
+  it("never reaches the database when the admin gate rejects", async () => {
+    vi.mocked(requireAdmin).mockRejectedValueOnce(new Error("NEXT_REDIRECT"));
+    await expect(
+      deleteReviewAction(null, formDataWithId(REVIEW_ID)),
+    ).rejects.toThrow("NEXT_REDIRECT");
+    expect(deleteEqMock).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Delete button: two-step inline confirm
+// ---------------------------------------------------------------------------
+
+describe("ReviewModerationButtons delete confirm", () => {
+  it("shows Delete for an approved review, and asks before deleting", async () => {
+    render(
+      <ReviewModerationButtons reviewId={REVIEW_ID} status="approved" />,
+    );
+    expect(
+      screen.getByRole("button", { name: "Delete" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/can't be undone/),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    expect(
+      screen.getByText("Delete this review? This can't be undone."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Yes, delete" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Cancel" }),
+    ).toBeInTheDocument();
+    // Arming the confirm does not delete anything yet.
+    expect(deleteEqMock).not.toHaveBeenCalled();
+  });
+
+  it("Cancel disarms the confirm without deleting", () => {
+    render(
+      <ReviewModerationButtons reviewId={REVIEW_ID} status="pending" />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(
+      screen.queryByText(/can't be undone/),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Delete" }),
+    ).toBeInTheDocument();
+    expect(deleteEqMock).not.toHaveBeenCalled();
+  });
+
+  it("confirming deletes the review", async () => {
+    render(
+      <ReviewModerationButtons reviewId={REVIEW_ID} status="rejected" />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Yes, delete" }));
+    await waitFor(() => {
+      expect(deleteEqMock).toHaveBeenCalledWith("id", REVIEW_ID);
+    });
   });
 });
 
@@ -133,6 +236,8 @@ describe("AdminReviewsPageContent", () => {
     expect(screen.getByText("Order RB-2026-123456")).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Approve" })).toHaveLength(1);
     expect(screen.getAllByRole("button", { name: "Reject" })).toHaveLength(2);
+    // Delete is offered on every row, whatever its status.
+    expect(screen.getAllByRole("button", { name: "Delete" })).toHaveLength(2);
   });
 
   it("shows an empty-queue message when there are no reviews", async () => {

@@ -8,11 +8,13 @@ import { z } from "zod";
 /**
  * Review moderation actions — S-7, T-70 (reviews).
  *
- * Approve / reject are the only writes: reviews are NEVER hard-
- * deleted (discount codes set the precedent — admin data stays),
- * and a rejected review can be approved later (and vice versa).
- * Both actions are requireAdmin-guarded and write through the
- * admin's JWT client (RLS reviews_admin_all, migration 0010).
+ * Approve / reject only change the status: a rejected review is
+ * kept, hidden, and can be approved later (and vice versa).
+ * Delete is the exception, added at the owner's request: it hard-
+ * deletes the row, permanently — a deleted review cannot be
+ * recovered. All three actions are requireAdmin-guarded and write
+ * through the admin's JWT client (RLS reviews_admin_all, FOR ALL
+ * with DELETE granted, migration 0010 — no new migration needed).
  */
 
 export interface ReviewActionState {
@@ -78,4 +80,40 @@ export async function rejectReviewAction(
   formData: FormData,
 ): Promise<ReviewActionState> {
   return updateReviewStatus(formData, "rejected");
+}
+
+/**
+ * Delete a review — hard delete, the row is removed for good.
+ * This cannot be undone: the UI asks for confirmation first.
+ */
+export async function deleteReviewAction(
+  _prevState: ReviewActionState | null,
+  formData: FormData,
+): Promise<ReviewActionState> {
+  await requireAdmin();
+  const parsed = reviewIdSchema.safeParse({
+    reviewId: formData.get("review_id"),
+  });
+  if (!parsed.success) {
+    return {
+      ok: false,
+      message: parsed.error.issues[0]?.message ?? "Check the review and try again.",
+    };
+  }
+  const supabase = await adminClient();
+  const { error } = await supabase
+    .from("reviews")
+    .delete()
+    .eq("id", parsed.data.reviewId);
+  if (error) {
+    return {
+      ok: false,
+      message: "The review couldn't be deleted. Please try again.",
+    };
+  }
+  revalidatePath("/admin/reviews");
+  return {
+    ok: true,
+    message: "Review deleted — it can't be recovered.",
+  };
 }
