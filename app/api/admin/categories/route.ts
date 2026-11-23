@@ -1,20 +1,60 @@
 import {
   adminClient,
   categorySaveSchema,
-  requireAdmin,
   slugifyName,
 } from "@/app/admin/(protected)/admin-data";
+import {
+  checkAdminAccess,
+  getSupabaseAdminEnv,
+} from "@/lib/supabase/admin";
 
 const GENERIC_ERROR = "Something went wrong. Please try again.";
 
 /**
  * POST /api/admin/categories — add a category (S-4, T-43).
- * requireAdmin() first. The slug is derived from the name and made
- * unique if needed. The new category stays hidden on the storefront
- * until it has ≥1 active product (listCategories enforces that).
+ *
+ * Auth failures are answered with JSON, never a redirect (same as
+ * the inventory route, PR #26): this route is called with fetch(),
+ * and a redirect would come back as the login page's HTML. The slug
+ * is derived from the name and made unique if needed. The new
+ * category stays hidden on the storefront until it has ≥1 active
+ * product (listCategories enforces that).
  */
 export async function POST(request: Request) {
-  await requireAdmin();
+  if (!getSupabaseAdminEnv()) {
+    // No Supabase configured (e.g. a build with no env vars): nobody
+    // can be signed in — the same answer as a logged-out visit.
+    return Response.json(
+      {
+        ok: false,
+        error: "Your session ended. Please sign in again.",
+        code: "unauthenticated",
+      },
+      { status: 401 },
+    );
+  }
+  const supabase = await adminClient();
+  const access = await checkAdminAccess(supabase);
+  if (access.status !== "ok") {
+    const error =
+      access.status === "unauthenticated"
+        ? "Your session ended. Please sign in again."
+        : access.status === "forbidden"
+          ? "This account is not an admin."
+          : access.status === "mfa-missing"
+            ? "Two-factor authentication is required. Please set it up first."
+            : "Two-factor authentication is required. Please sign in again with your authenticator code.";
+    // Log the failure server-side (route + code only, no user data);
+    // the admin sees the plain-words message above.
+    console.error("Admin API auth failed", {
+      route: "POST /api/admin/categories",
+      code: access.status,
+    });
+    return Response.json(
+      { ok: false, error, code: access.status },
+      { status: 401 },
+    );
+  }
 
   let body: unknown;
   try {
@@ -32,7 +72,6 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
-  const supabase = await adminClient();
   const { data: maxRow } = await supabase
     .from("categories")
     .select("sort_order")
