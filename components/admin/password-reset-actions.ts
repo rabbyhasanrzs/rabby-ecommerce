@@ -5,7 +5,10 @@ import {
   LOGIN_RATE_WINDOW_MS,
   checkRateLimit,
 } from "@/lib/rate-limit";
-import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  createAdminClient,
+  createPasswordResetClient,
+} from "@/lib/supabase/admin";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
@@ -13,11 +16,15 @@ import { redirect } from "next/navigation";
  * Admin password reset (S-6 follow-up) — server actions.
  *
  * Flow: the admin asks for a reset link on /admin/forgot-password
- * -> Supabase emails a recovery link -> the link lands on
- * /auth/callback, which exchanges the code for a session and sends
- * the admin to /admin/reset-password -> the admin sets a new
- * password, is signed out, and signs in again with the new
- * password (MFA code included, as usual).
+ * -> Supabase emails an IMPLICIT-flow recovery link (no PKCE code
+ * verifier is stored — the mail app opens the link in a different
+ * cookie jar than the browser that requested it, so a PKCE link
+ * fails at the callback with "code verifier not found") -> the
+ * link lands on /auth/callback with the session in the URL hash,
+ * which redirects to /admin/reset-password with the hash preserved
+ * -> the reset page's client handler sets the session from the hash
+ * -> the admin sets a new password, is signed out, and signs in
+ * again with the new password (MFA code included, as usual).
  *
  * The reset email goes out through Supabase Auth's own mail, not
  * the Gmail used for order emails — no custom SMTP is configured
@@ -90,7 +97,11 @@ export async function requestPasswordResetAction(
     return { ok: false, error: RATE_LIMIT_ERROR };
   }
 
-  const supabase = await createAdminClient();
+  // The reset email goes out through the implicit-flow client:
+  // no PKCE verifier is stored, so the link works even when the
+  // mail app opens it in a different cookie jar (see
+  // createPasswordResetClient in lib/supabase/admin.ts).
+  const supabase = createPasswordResetClient();
   const origin = await getRequestOrigin();
   const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
     redirectTo: `${origin}/auth/callback?next=/admin/reset-password`,

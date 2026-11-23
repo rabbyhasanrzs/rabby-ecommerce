@@ -1,4 +1,5 @@
 import { createServerClient } from "@supabase/ssr";
+import { createClient } from "@supabase/supabase-js";
 import type { SupabaseClient, User } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
@@ -74,6 +75,42 @@ export async function createAdminClient(): Promise<SupabaseClient> {
           // Ignore — see the comment above.
         }
       },
+    },
+  });
+}
+
+/**
+ * Password-reset client (S-6 follow-up) — a plain supabase-js client
+ * with flowType "implicit", used ONLY for sending the reset email.
+ * It must NOT be the shared createAdminClient(): @supabase/ssr's
+ * createServerClient hard-codes flowType "pkce" AFTER spreading
+ * options.auth (verified in the installed code and at runtime — an
+ * explicit auth.flowType of "implicit" is silently ignored), and
+ * PKCE needs the code verifier stored in the requesting browser's
+ * cookies until the link is clicked. The owner clicks the emailed
+ * link from his mail app, whose in-app browser is a different
+ * cookie jar than the browser that requested the link — so the
+ * callback finds no verifier ("PKCE code verifier not found in
+ * storage") even though the request set all three verifier cookies
+ * correctly. The implicit link carries the session in the URL hash
+ * (#access_token), which needs no stored verifier: the callback
+ * redirects to the reset page with the hash preserved, and the
+ * reset page's client handler (PR #35) sets the session from it.
+ * This client sends one API call and holds no session, so it needs
+ * no cookies — persist/auto-refresh/session detection are all off.
+ * Sign-in and MFA keep using createAdminClient() (PKCE) unchanged.
+ */
+export function createPasswordResetClient(): SupabaseClient {
+  const env = getSupabaseAdminEnv();
+  if (!env) {
+    throw new Error("Supabase is not configured");
+  }
+  return createClient(env.url, env.anonKey, {
+    auth: {
+      flowType: "implicit",
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+      persistSession: false,
     },
   });
 }

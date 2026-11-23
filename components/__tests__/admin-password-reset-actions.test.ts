@@ -10,12 +10,16 @@ const {
   updateUserMock,
   signOutMock,
   rpcMock,
+  createAdminClientMock,
+  createPasswordResetClientMock,
   mockRequestState,
 } = vi.hoisted(() => ({
   resetPasswordForEmailMock: vi.fn(),
   updateUserMock: vi.fn(),
   signOutMock: vi.fn(),
   rpcMock: vi.fn(),
+  createAdminClientMock: vi.fn(),
+  createPasswordResetClientMock: vi.fn(),
   mockRequestState: {
     ip: "203.0.113.7",
     host: "rabby-ecommerce-staging.vercel.app",
@@ -24,14 +28,10 @@ const {
 }));
 
 vi.mock("@/lib/supabase/admin", () => ({
-  createAdminClient: vi.fn().mockResolvedValue({
-    auth: {
-      resetPasswordForEmail: resetPasswordForEmailMock,
-      updateUser: updateUserMock,
-      signOut: signOutMock,
-    },
-    rpc: rpcMock,
-  }),
+  createAdminClient: createAdminClientMock,
+  // The reset client is synchronous (plain supabase-js client, no
+  // cookies) — mockReturnValue, not mockResolvedValue.
+  createPasswordResetClient: createPasswordResetClientMock,
 }));
 
 vi.mock("next/headers", () => ({
@@ -66,6 +66,14 @@ describe("requestPasswordResetAction", () => {
     rpcMock.mockResolvedValue({ data: true, error: null });
     updateUserMock.mockResolvedValue({ data: {}, error: null });
     signOutMock.mockResolvedValue({ error: null });
+    createPasswordResetClientMock.mockReturnValue({
+      auth: {
+        resetPasswordForEmail: resetPasswordForEmailMock,
+        updateUser: updateUserMock,
+        signOut: signOutMock,
+      },
+      rpc: rpcMock,
+    });
   });
 
   it("rejects an empty email without calling Supabase", async () => {
@@ -96,6 +104,12 @@ describe("requestPasswordResetAction", () => {
           "https://rabby-ecommerce-staging.vercel.app/auth/callback?next=/admin/reset-password",
       },
     );
+  });
+
+  it("sends the reset email through the implicit-flow client, not the PKCE admin client", async () => {
+    await requestPasswordResetAction("owner@example.com");
+    expect(createPasswordResetClientMock).toHaveBeenCalledTimes(1);
+    expect(createAdminClientMock).not.toHaveBeenCalled();
   });
 
   it("returns the generic error when Supabase fails", async () => {
@@ -134,6 +148,14 @@ describe("resetPasswordAction", () => {
     rpcMock.mockResolvedValue({ data: true, error: null });
     updateUserMock.mockResolvedValue({ data: {}, error: null });
     signOutMock.mockResolvedValue({ error: null });
+    createAdminClientMock.mockResolvedValue({
+      auth: {
+        resetPasswordForEmail: resetPasswordForEmailMock,
+        updateUser: updateUserMock,
+        signOut: signOutMock,
+      },
+      rpc: rpcMock,
+    });
   });
 
   it("rejects mismatched passwords without calling Supabase", async () => {
