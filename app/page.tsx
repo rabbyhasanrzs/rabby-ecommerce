@@ -1,4 +1,5 @@
 import HomeCatalogueSections from "@/components/home-catalogue-sections";
+import HomeReviews from "@/components/home-reviews";
 import TrustStrip from "@/components/trust-strip";
 import { resolveHeroPhoto } from "@/lib/hero-photo";
 import Image from "next/image";
@@ -10,8 +11,10 @@ import { Suspense } from "react";
  *
  * Hero (headline + subcopy + "Shop sunglasses" CTA + hero image),
  * TrustStrip, Shop by category + New arrivals from the live
- * catalogue, Find your fit teaser, FAQ teaser. No "Placeholder"
- * badges anywhere. One H1 (the hero headline), section headings H2.
+ * catalogue, Find your fit teaser, customer reviews (once real —
+ * the section renders nothing until the first approved review
+ * exists), FAQ teaser. No "Placeholder" badges anywhere. One H1
+ * (the hero headline), section headings H2.
  *
  * Hero copy claims nothing that does not exist: no prices, no stock,
  * no features. The hero photo is optional — resolveHeroPhoto()
@@ -93,6 +96,13 @@ export default function Home() {
           </Link>
         </div>
       </section>
+
+      {/* Customer reviews — strategy §7.1 homepage order: after fit
+          help, before FAQ. Renders nothing until the first approved
+          review exists (S-7, migration 0011). */}
+      <Suspense fallback={null}>
+        <HomeReviews />
+      </Suspense>
 
       {/* FAQ teaser → Help & FAQ. */}
       <section

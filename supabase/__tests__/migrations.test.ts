@@ -18,6 +18,11 @@ const migration0010 = readFileSync(
   "utf8",
 );
 
+const migration0011 = readFileSync(
+  join(process.cwd(), "supabase/migrations/0011_s7_home_reviews.sql"),
+  "utf8",
+);
+
 const ADMIN_WRITTEN_TABLES = [
   "categories",
   "products",
@@ -224,5 +229,45 @@ describe("migration 0010 — S-7 product reviews", () => {
 
   it("seeds no reviews — the only INSERT into reviews is the submit function itself", () => {
     expect(migration0010.match(/INSERT INTO public\.reviews/g)?.length).toBe(1);
+  });
+});
+
+describe("migration 0011 — S-7 home-page reviews", () => {
+  it("adds no table and no RLS change — it reuses the 0010 reviews table as-is", () => {
+    expect(migration0011).not.toContain("CREATE TABLE");
+    expect(migration0011).not.toContain("CREATE POLICY");
+    expect(migration0011).not.toMatch(
+      /^GRANT\s+(SELECT|INSERT|UPDATE|DELETE)[^;]*\bTO anon\b/im,
+    );
+  });
+
+  it("defines get_recent_approved_reviews as SECURITY DEFINER with anon + authenticated EXECUTE", () => {
+    expect(migration0011).toContain(
+      "CREATE OR REPLACE FUNCTION public.get_recent_approved_reviews(p_limit int)",
+    );
+    expect(migration0011).toContain("SECURITY DEFINER");
+    expect(migration0011).toContain(
+      "GRANT EXECUTE ON FUNCTION public.get_recent_approved_reviews(int) TO anon, authenticated;",
+    );
+  });
+
+  it("returns only approved reviews of active products, newest first, with the product slug + name", () => {
+    expect(migration0011).toContain("r.status = 'approved'");
+    expect(migration0011).toContain("p.status = 'active'");
+    expect(migration0011).toContain("ORDER BY r.created_at DESC");
+    expect(migration0011).toContain("p.slug, p.name, r.reviewer_name, r.rating, r.body, r.created_at");
+  });
+
+  it("clamps the limit server-side to 1..10 and never returns phone, email, or order reference", () => {
+    expect(migration0011).toContain(
+      "LIMIT LEAST(GREATEST(COALESCE(p_limit, 3), 1), 10);",
+    );
+    expect(migration0011).not.toContain("customer_phone");
+    expect(migration0011).not.toContain("customer_email");
+    expect(migration0011).not.toContain("order_reference");
+  });
+
+  it("seeds no reviews", () => {
+    expect(migration0011).not.toContain("INSERT INTO");
   });
 });

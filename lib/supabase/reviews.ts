@@ -27,6 +27,9 @@ import { SupabaseNotConfiguredError } from "@/lib/supabase/orders";
 // Types (match the migration 0010 function contracts exactly)
 // ---------------------------------------------------------------------------
 
+/** How many approved reviews the home page shows (migration 0011). */
+export const HOME_REVIEWS_COUNT = 3;
+
 /** One approved review, as the public may see it. */
 export interface PublicReview {
   reviewerName: string;
@@ -60,6 +63,93 @@ export interface ProductReviewAggregate {
   productSlug: string;
   reviewCount: number;
   averageRating: number | null;
+}
+
+/** One approved review for the home page, with its product. */
+export interface RecentReview {
+  productSlug: string;
+  productName: string;
+  reviewerName: string;
+  rating: number;
+  body: string;
+  createdAt: string;
+}
+
+/**
+ * First name only for display (the home page shows "Rahim", never
+ * the full order name — the reviewer is a private customer, not a
+ * public profile). Pure (unit-tested). A blank name falls back to
+ * "Customer" so the card never renders an empty author line.
+ */
+export function firstName(fullName: string): string {
+  const first = fullName.trim().split(/\s+/)[0] ?? "";
+  return first === "" ? "Customer" : first;
+}
+
+/**
+ * Parse the get_recent_approved_reviews rows into typed reviews.
+ * Returns null on a malformed payload — a broken contract is a
+ * "no reviews" render, never a crash. Pure (unit-tested).
+ */
+export function parseRecentReviews(value: unknown): RecentReview[] | null {
+  if (!Array.isArray(value)) {
+    return null;
+  }
+  const reviews: RecentReview[] = [];
+  for (const row of value) {
+    if (!isRecord(row)) {
+      return null;
+    }
+    if (
+      typeof row.product_slug !== "string" ||
+      typeof row.product_name !== "string" ||
+      typeof row.reviewer_name !== "string" ||
+      typeof row.body !== "string" ||
+      typeof row.created_at !== "string"
+    ) {
+      return null;
+    }
+    const rating = asCount(row.rating);
+    if (rating === null || rating < 1 || rating > 5) {
+      return null;
+    }
+    reviews.push({
+      productSlug: row.product_slug,
+      productName: row.product_name,
+      reviewerName: row.reviewer_name,
+      rating,
+      body: row.body,
+      createdAt: row.created_at,
+    });
+  }
+  return reviews;
+}
+
+/**
+ * The most recent approved reviews across all products, newest
+ * first, for the home page — one batched call, no N+1. Returns an
+ * empty array when no approved review exists yet (the normal state:
+ * the home section stays hidden). Throws
+ * SupabaseNotConfiguredError when the env vars are missing, and a
+ * generic Error for anything else — callers catch and render
+ * without reviews.
+ */
+export async function getRecentApprovedReviews(
+  limit = HOME_REVIEWS_COUNT,
+): Promise<RecentReview[]> {
+  const supabase = requireClient();
+  const { data, error } = await supabase.rpc(
+    "get_recent_approved_reviews",
+    { p_limit: limit },
+  );
+  if (error) {
+    throw new Error("Reviews could not be loaded. Please try again.");
+  }
+  const parsed = parseRecentReviews(data);
+  if (!parsed) {
+    throw new Error("Reviews could not be loaded. Please try again.");
+  }
+  return parsed;
 }
 
 export type ReviewSubmitInput = {
