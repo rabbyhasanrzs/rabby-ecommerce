@@ -1,6 +1,8 @@
+import { StarIcon } from "@/components/icons";
 import ProductImage from "@/components/product-image";
 import { formatPriceBdt, stockLabel } from "@/lib/format";
 import type { ProductSummary } from "@/lib/supabase/catalog";
+import type { ProductReviewAggregate } from "@/lib/supabase/reviews";
 import Link from "next/link";
 
 /**
@@ -17,7 +19,14 @@ import Link from "next/link";
  * separated "not by shadows"; the owner-approved prototype has subtle
  * card shadows, and the standing instruction is prototype parity.
  */
-export default function ProductCard({ product }: { product: ProductSummary }) {
+export default function ProductCard({
+  product,
+  reviewAggregate,
+}: {
+  product: ProductSummary;
+  /** Batch aggregate from the listing page, or null when unavailable. */
+  reviewAggregate?: ProductReviewAggregate | null;
+}) {
   const outOfStock = product.stock_total <= 0;
   return (
     <li className="group overflow-hidden rounded-lg border border-border bg-surface shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:border-border-strong hover:shadow-md focus-within:shadow-md focus-within:ring-2 focus-within:ring-focus">
@@ -39,6 +48,24 @@ export default function ProductCard({ product }: { product: ProductSummary }) {
           <span className="mt-2 block text-base font-semibold text-text">
             {formatPriceBdt(product.price_bdt)}
           </span>
+          {/* S-7: aggregate rating — only once real approved reviews
+              exist (no "0.0", no rating without reviews, D-8). */}
+          {reviewAggregate !== null &&
+          reviewAggregate !== undefined &&
+          reviewAggregate.reviewCount > 0 &&
+          reviewAggregate.averageRating !== null ? (
+            <span className="mt-1 flex items-center gap-1.5 text-sm font-semibold text-text">
+              <StarIcon filled className="h-4 w-4 text-warning" />
+              <span>
+                {reviewAggregate.averageRating.toFixed(1)} (
+                {reviewAggregate.reviewCount})
+              </span>
+              <span className="sr-only">
+                out of 5 stars, based on {reviewAggregate.reviewCount} review
+                {reviewAggregate.reviewCount === 1 ? "" : "s"}
+              </span>
+            </span>
+          ) : null}
           <span
             className={`mt-1 block pb-4 text-sm font-semibold ${
               outOfStock ? "text-error" : "text-stock-in"

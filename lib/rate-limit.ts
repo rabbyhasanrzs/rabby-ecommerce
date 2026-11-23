@@ -53,6 +53,15 @@ export const COUPON_RATE_LIMIT = 10;
 export const COUPON_RATE_WINDOW_MS = 10 * 60 * 1000;
 
 /**
+ * Review submission: 10 attempts per 10 minutes per IP (S-7, T-70).
+ * Same budget as checkout — this is the first public write path
+ * that takes publishable free text, so a submit is a write like
+ * checkout, not a read. Checked AFTER the schema parse.
+ */
+export const REVIEW_RATE_LIMIT = 10;
+export const REVIEW_RATE_WINDOW_MS = 10 * 60 * 1000;
+
+/**
  * Admin sign-in / MFA verify: 10 attempts per 10 minutes per IP
  * (S-6, T-61, S6-05). Server actions have no Request object, so the
  * caller builds the key from next/headers (see login-actions.ts).

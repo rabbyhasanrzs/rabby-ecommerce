@@ -188,6 +188,23 @@ export interface AdminCategoryRow {
   is_active: boolean;
 }
 
+/** One review row for the admin moderation queue (S-7, T-70). */
+export interface AdminReview {
+  id: string;
+  product_id: string;
+  product_name: string | null;
+  product_slug: string | null;
+  order_reference: string;
+  reviewer_name: string;
+  rating: number;
+  quality_rating: number | null;
+  value_rating: number | null;
+  fit_rating: number | null;
+  body: string;
+  status: "pending" | "approved" | "rejected";
+  created_at: string;
+}
+
 // ---------------------------------------------------------------------------
 // Order RPCs (the ONLY path to order data)
 // ---------------------------------------------------------------------------
@@ -391,6 +408,74 @@ export async function adminListCategories(): Promise<AdminCategoryRow[]> {
     throw new Error("Could not load categories.");
   }
   return data as AdminCategoryRow[];
+}
+
+// ---------------------------------------------------------------------------
+// Review moderation (S-7, T-70) — direct table reads through the admin
+// client (RLS reviews_admin_all, migration 0010), the same pattern as
+// adminListProducts. Orders stay RPC-only; reviews are admin-owned
+// data like products, so no RPC is needed here.
+// ---------------------------------------------------------------------------
+
+const REVIEW_STATUS_ORDER: Record<AdminReview["status"], number> = {
+  pending: 0,
+  approved: 1,
+  rejected: 2,
+};
+
+/** Reviews for the moderation queue — pending first, newest first within a status. */
+export async function adminListReviews(
+  status: AdminReview["status"] | null,
+): Promise<AdminReview[]> {
+  const supabase = await adminClient();
+  let query = supabase
+    .from("reviews")
+    .select(
+      "id,product_id,order_reference,reviewer_name,rating,quality_rating,value_rating,fit_rating,body,status,created_at,products(name,slug)",
+    )
+    .order("created_at", { ascending: false })
+    .limit(100);
+  if (status !== null) {
+    query = query.eq("status", status);
+  }
+  const { data, error } = await query;
+  if (error || !data) {
+    throw new Error("Could not load reviews.");
+  }
+  const rows = (data as unknown as Array<{
+    id: string;
+    product_id: string;
+    order_reference: string;
+    reviewer_name: string;
+    rating: number;
+    quality_rating: number | null;
+    value_rating: number | null;
+    fit_rating: number | null;
+    body: string;
+    status: string;
+    created_at: string;
+    products: { name: string; slug: string } | null;
+  }>).map((row) => ({
+    id: row.id,
+    product_id: row.product_id,
+    product_name: row.products?.name ?? null,
+    product_slug: row.products?.slug ?? null,
+    order_reference: row.order_reference,
+    reviewer_name: row.reviewer_name,
+    rating: row.rating,
+    quality_rating: row.quality_rating,
+    value_rating: row.value_rating,
+    fit_rating: row.fit_rating,
+    body: row.body,
+    status: row.status as AdminReview["status"],
+    created_at: row.created_at,
+  }));
+  // Pending first — the queue is the work, not the archive.
+  return rows.sort(
+    (a, b) =>
+      REVIEW_STATUS_ORDER[a.status] - REVIEW_STATUS_ORDER[b.status] ||
+      b.created_at.localeCompare(a.created_at),
+  );
 }
 
 // slugifyName lives in lib/slugify.ts (pure, client-safe, no regex —

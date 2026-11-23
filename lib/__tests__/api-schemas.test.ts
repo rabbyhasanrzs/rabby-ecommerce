@@ -4,6 +4,7 @@ import {
   checkoutRequestSchema,
   couponValidateRequestSchema,
   lookupRequestSchema,
+  reviewSubmitRequestSchema,
 } from "@/lib/api-schemas";
 import { describe, expect, it } from "vitest";
 
@@ -350,6 +351,74 @@ describe("cancelRequestSchema", () => {
         reference: "RB-2026-12345",
         phone: "01712345678",
       }).success,
+    ).toBe(false);
+  });
+});
+
+describe("reviewSubmitRequestSchema", () => {
+  const valid = {
+    reference: "RB-2026-123456",
+    phone: "01712345678",
+    productSlug: "sample-round-a",
+    rating: 5,
+    qualityRating: 4,
+    valueRating: null,
+    fitRating: undefined,
+    body: "Great fit and very comfortable.",
+  };
+
+  it("accepts a valid review with and without sub-ratings", () => {
+    expect(reviewSubmitRequestSchema.safeParse(valid).success).toBe(true);
+    expect(
+      reviewSubmitRequestSchema.safeParse({
+        ...valid,
+        qualityRating: undefined,
+        valueRating: undefined,
+        fitRating: undefined,
+      }).success,
+    ).toBe(true);
+  });
+
+  it("normalises the phone number (+880 -> 01)", () => {
+    const parsed = reviewSubmitRequestSchema.safeParse({
+      ...valid,
+      phone: "+8801712345678",
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.phone).toBe("01712345678");
+    }
+  });
+
+  it("rejects a bad reference, rating outside 1–5, and an empty body", () => {
+    expect(
+      reviewSubmitRequestSchema.safeParse({ ...valid, reference: "NOPE" })
+        .success,
+    ).toBe(false);
+    expect(
+      reviewSubmitRequestSchema.safeParse({ ...valid, rating: 0 }).success,
+    ).toBe(false);
+    expect(
+      reviewSubmitRequestSchema.safeParse({ ...valid, rating: 6 }).success,
+    ).toBe(false);
+    expect(
+      reviewSubmitRequestSchema.safeParse({ ...valid, body: "   " }).success,
+    ).toBe(false);
+    expect(
+      reviewSubmitRequestSchema.safeParse({
+        ...valid,
+        body: "x".repeat(2001),
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects a sub-rating outside 1–5", () => {
+    expect(
+      reviewSubmitRequestSchema.safeParse({ ...valid, qualityRating: 0 })
+        .success,
+    ).toBe(false);
+    expect(
+      reviewSubmitRequestSchema.safeParse({ ...valid, fitRating: 6 }).success,
     ).toBe(false);
   });
 });

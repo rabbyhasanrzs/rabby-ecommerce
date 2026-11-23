@@ -91,3 +91,56 @@ export type LookupRequest = z.infer<typeof lookupRequestSchema>;
 export const cancelRequestSchema = lookupRequestSchema;
 
 export type CancelRequest = z.infer<typeof cancelRequestSchema>;
+
+/**
+ * POST /api/reviews — a verified-buyer review (S-7, T-70).
+ * Reference + phone prove the purchase (same two fields as track
+ * order); the product slug is the reviewed product. The reviewer
+ * name is NOT sent — submit_review takes it from the order.
+ * Quality / Value / Fit are the F12 sub-ratings, optional (null
+ * means "not rated"); the overall rating and body are required.
+ */
+export const reviewSubmitRequestSchema = z.object({
+  reference: z
+    .string()
+    .trim()
+    .regex(
+      ORDER_REFERENCE_PATTERN,
+      "Enter a valid order reference (RB-2026-123456).",
+    ),
+  phone: phoneSchema,
+  productSlug: slugSchema,
+  rating: z
+    .number()
+    .int("Give a rating from 1 to 5 stars.")
+    .min(1, "Give a rating from 1 to 5 stars.")
+    .max(5, "Give a rating from 1 to 5 stars."),
+  qualityRating: z
+    .number()
+    .int()
+    .min(1)
+    .max(5)
+    .nullable()
+    .optional(),
+  valueRating: z
+    .number()
+    .int()
+    .min(1)
+    .max(5)
+    .nullable()
+    .optional(),
+  fitRating: z
+    .number()
+    .int()
+    .min(1)
+    .max(5)
+    .nullable()
+    .optional(),
+  body: z
+    .string()
+    .trim()
+    .min(1, "Write a few words about the product.")
+    .max(2000, "Keep your review under 2000 characters."),
+});
+
+export type ReviewSubmitRequest = z.infer<typeof reviewSubmitRequestSchema>;
