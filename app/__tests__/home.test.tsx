@@ -31,6 +31,18 @@ vi.mock("next/server", () => ({
   connection: vi.fn(async () => {}),
 }));
 
+// S-7: HomeCatalogueSections renders ProductCards, which carry a
+// wishlist heart (useWishlist).
+vi.mock("@/lib/wishlist-context", () => ({
+  useWishlist: () => ({
+    slugs: [],
+    count: 0,
+    loaded: true,
+    isSaved: () => false,
+    toggle: vi.fn(),
+  }),
+}));
+
 /**
  * Mock only the Supabase reads; the real parseListingParams /
  * sortProducts / CatalogueUnavailableError stay intact, so the test

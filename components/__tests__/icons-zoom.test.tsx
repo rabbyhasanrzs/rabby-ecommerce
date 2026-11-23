@@ -6,6 +6,7 @@ import type { ProductDetail } from "@/lib/supabase/catalog";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { BagProvider } from "@/lib/bag-context";
+import { WishlistProvider } from "@/lib/wishlist-context";
 
 function sampleProduct(images: ProductDetail["images"]): ProductDetail {
   return {
@@ -28,17 +29,27 @@ function sampleProduct(images: ProductDetail["images"]): ProductDetail {
 }
 
 describe("Icons", () => {
-  it("header shows search and bag icons", () => {
-    const { container } = render(<BagProvider><SiteHeader /></BagProvider>);
+  it("header shows search, bag, and wishlist icons", () => {
+    const { container } = render(
+      <BagProvider>
+        <WishlistProvider>
+          <SiteHeader />
+        </WishlistProvider>
+      </BagProvider>,
+    );
 
-    // Exactly two decorative SVGs: search (in the input) and bag.
-    expect(container.querySelectorAll("svg")).toHaveLength(2);
+    // Exactly three decorative SVGs: search (in the input), bag,
+    // and wishlist heart (S-7).
+    expect(container.querySelectorAll("svg")).toHaveLength(3);
     expect(
       screen.getByRole("searchbox", { name: "Search sunglasses" }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: /Bag, 0 items/i }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: /Wishlist, 0 saved/i }),
+    ).toHaveAttribute("href", "/wishlist");
   });
 
   it("trust strip shows one icon per item", () => {
@@ -161,17 +172,19 @@ describe("ProductDetailClient zoom", () => {
   it("main photo is zoomable when the product has a photo", () => {
     render(
       <BagProvider>
-        <ProductDetailClient
-          product={sampleProduct([
-            {
-              id: "img-1",
-              storage_path: "/images/sample-round-a.webp",
-              alt_text: "SAMPLE Round A",
-              sort_order: 0,
-              is_primary: true,
-            },
-          ])}
-        />
+        <WishlistProvider>
+          <ProductDetailClient
+            product={sampleProduct([
+              {
+                id: "img-1",
+                storage_path: "/images/sample-round-a.webp",
+                alt_text: "SAMPLE Round A",
+                sort_order: 0,
+                is_primary: true,
+              },
+            ])}
+          />
+        </WishlistProvider>
       </BagProvider>,
     );
 
@@ -182,7 +195,7 @@ describe("ProductDetailClient zoom", () => {
   });
 
   it("main photo has no zoom when the product has no photos", () => {
-    render(<BagProvider><ProductDetailClient product={sampleProduct([])} /></BagProvider>);
+    render(<BagProvider><WishlistProvider><ProductDetailClient product={sampleProduct([])} /></WishlistProvider></BagProvider>);
 
     expect(screen.getByText("Photo coming soon")).toBeInTheDocument();
     expect(screen.queryByTestId("photo-zoom")).not.toBeInTheDocument();

@@ -1,9 +1,11 @@
 import { StarIcon } from "@/components/icons";
 import ProductImage from "@/components/product-image";
+import WishlistButton from "@/components/wishlist-button";
 import { formatPriceBdt, stockLabel } from "@/lib/format";
 import type { ProductSummary } from "@/lib/supabase/catalog";
 import type { ProductReviewAggregate } from "@/lib/supabase/reviews";
 import Link from "next/link";
+import type { ReactNode } from "react";
 
 /**
  * Product card — listing grid. Shows the primary image (or the
@@ -18,18 +20,31 @@ import Link from "next/link";
  * Deviation recorded in the S-5 PR: Phase 06A §1.4 says cards are
  * separated "not by shadows"; the owner-approved prototype has subtle
  * card shadows, and the standing instruction is prototype parity.
+ *
+ * Wishlist heart (S-7): the heart toggle is a SIBLING of the card
+ * link, positioned over the top-right of the image — NEVER nested
+ * inside the <a>. A <button> inside a <Link> is invalid HTML and a
+ * keyboard/screen-reader problem: activating the heart must never
+ * navigate. The card is position-relative so the absolute heart sits
+ * over the image.
  */
 export default function ProductCard({
   product,
   reviewAggregate,
+  footer,
 }: {
   product: ProductSummary;
   /** Batch aggregate from the listing page, or null when unavailable. */
   reviewAggregate?: ProductReviewAggregate | null;
+  /**
+   * Optional actions rendered below the card link, inside the card
+   * (the /wishlist page passes "Choose options" + Remove here).
+   */
+  footer?: ReactNode;
 }) {
   const outOfStock = product.stock_total <= 0;
   return (
-    <li className="group overflow-hidden rounded-lg border border-border bg-surface shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:border-border-strong hover:shadow-md focus-within:shadow-md focus-within:ring-2 focus-within:ring-focus">
+    <li className="group relative overflow-hidden rounded-lg border border-border bg-surface shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:border-border-strong hover:shadow-md focus-within:shadow-md focus-within:ring-2 focus-within:ring-focus">
       <Link href={`/product/${product.slug}`} className="block">
         <ProductImage
           src={product.primary_image}
@@ -75,6 +90,17 @@ export default function ProductCard({
           </span>
         </span>
       </Link>
+      {/* S-7: heart as a SIBLING of the link, over the image — a
+          button must never be nested inside the card's <a>. */}
+      <WishlistButton
+        slug={product.slug}
+        productName={product.name}
+        variant="card"
+        className="absolute right-3 top-3"
+      />
+      {footer ? (
+        <div className="border-t border-border px-4 py-3">{footer}</div>
+      ) : null}
     </li>
   );
 }

@@ -2,8 +2,19 @@ import FaceShapeIcon from "@/components/face-shape-icon";
 import ProductDetailClient from "@/components/product-detail-client";
 import type { ProductDetail } from "@/lib/supabase/catalog";
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { BagProvider } from "@/lib/bag-context";
+
+// S-7: ProductDetailClient carries a wishlist heart (useWishlist).
+vi.mock("@/lib/wishlist-context", () => ({
+  useWishlist: () => ({
+    slugs: [],
+    count: 0,
+    loaded: true,
+    isSaved: () => false,
+    toggle: vi.fn(),
+  }),
+}));
 
 const THREE_IMAGES: ProductDetail["images"] = [
   {

@@ -126,8 +126,7 @@ export function ChevronRightIcon({ className }: IconProps) {
  * Five-point star — reviews (S-7). Filled (solid currentColor) or
  * outline (stroke). NOT part of the stroke-based Svg wrapper above:
  * a filled star needs fill, not stroke.
- */
-export function StarIcon({
+ */export function StarIcon({
   filled,
   className,
 }: IconProps & { filled: boolean }) {
@@ -142,6 +141,32 @@ export function StarIcon({
       className={className}
     >
       <path d="M12 17.27 18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z" />
+    </svg>
+  );
+}
+
+/**
+ * Heart — wishlist (S-7). Filled (solid currentColor) when the
+ * product is saved, outline otherwise. Same split as StarIcon: a
+ * filled heart needs fill, not stroke, so it is not part of the
+ * stroke-based Svg wrapper above.
+ */
+export function HeartIcon({
+  filled,
+  className,
+}: IconProps & { filled: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      fill={filled ? "currentColor" : "none"}
+      stroke={filled ? "none" : "currentColor"}
+      strokeWidth={filled ? 0 : 1.75}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
     </svg>
   );
 }

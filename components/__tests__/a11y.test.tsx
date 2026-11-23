@@ -101,6 +101,18 @@ vi.mock("@/lib/bag-context", () => ({
   }),
 }));
 
+// S-7: ProductCard and the PDP carry a wishlist heart (useWishlist).
+// Stub it the same way as the bag — a11y asserts violations only.
+vi.mock("@/lib/wishlist-context", () => ({
+  useWishlist: () => ({
+    slugs: [],
+    count: 0,
+    loaded: true,
+    isSaved: () => false,
+    toggle: vi.fn(),
+  }),
+}));
+
 vi.mock("@/lib/supabase/catalog", async (importOriginal) => {
   const original =
     await importOriginal<typeof import("@/lib/supabase/catalog")>();

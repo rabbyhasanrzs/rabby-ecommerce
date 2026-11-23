@@ -1,5 +1,6 @@
 import BagLink from "@/components/bag-link";
 import { SearchIcon } from "@/components/icons";
+import WishlistLink from "@/components/wishlist-link";
 import Link from "next/link";
 
 const NAV_LINKS = [
@@ -83,6 +84,8 @@ export default function SiteHeader() {
 
           <BagLink />
 
+          <WishlistLink />
+
           <details className="relative md:hidden">
             <summary className="cursor-pointer list-none rounded-md border border-border px-3 py-2 text-base text-text">
               Menu
@@ -105,6 +108,12 @@ export default function SiteHeader() {
                 className="rounded px-3 py-2.5 text-base text-text hover:bg-surface-hover"
               >
                 Track Order
+              </Link>
+              <Link
+                href="/wishlist"
+                className="rounded px-3 py-2.5 text-base text-text hover:bg-surface-hover"
+              >
+                Wishlist
               </Link>
             </nav>
           </details>

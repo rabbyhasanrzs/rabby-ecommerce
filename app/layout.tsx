@@ -5,6 +5,7 @@ import MiniCartDrawer from "@/components/mini-cart-drawer";
 import SiteFooter from "@/components/site-footer";
 import SiteHeader from "@/components/site-header";
 import { BagProvider } from "@/lib/bag-context";
+import { WishlistProvider } from "@/lib/wishlist-context";
 import {
   HERO_IMAGE_PATH,
   SITE_DESCRIPTION,
@@ -86,7 +87,11 @@ export default function RootLayout({
     >
       <body className="flex min-h-full flex-col">
         <BagProvider>
-          {/*
+          <WishlistProvider>
+            {/* S-7: wishlist (localStorage, like the bag) — mounted
+                next to BagProvider so the header badge, cards, PDP
+                and /wishlist all read the same saved list. */}
+            {/*
            * S-6 follow-up (D-S6-5): the admin's websiteNotice as a
            * storefront announcement banner, above the header on every
            * storefront page. The banner itself renders nothing on
@@ -103,6 +108,7 @@ export default function RootLayout({
           <div className="flex flex-1 flex-col">{children}</div>
           <SiteFooter />
           <MiniCartDrawer />
+          </WishlistProvider>
         </BagProvider>
         {/*
          * S-6 monitoring: Vercel Analytics (page views) + Speed
