@@ -202,6 +202,61 @@ export function sortProducts(
 }
 
 // ---------------------------------------------------------------------------
+// Related products — S-7 cross-sell (F13, 1.x-2), "You May Also Like"
+// ---------------------------------------------------------------------------
+
+/** How many related products the row shows (prototype parity). */
+export const RELATED_PRODUCTS_LIMIT = 4;
+
+/**
+ * Pick the related products for a PDP — same-category first, then fill
+ * with any other active products, up to `limit`. The current product is
+ * never included. Out-of-stock products ARE included: the card already
+ * shows their disabled "Out of Stock" state, and excluding them would
+ * shrink an already small pool.
+ *
+ * Pure function (unit-tested): `all` is the active catalogue (already
+ * filtered to status = 'active' by listProducts). Order is deterministic
+ * — featured order (category, then name) inside each group — so the row
+ * is stable between visits. No frame-shape signal is used: the DB has
+ * no shape field, and shape must never be derived from product names.
+ */
+export function pickRelatedProducts(
+  current: ProductSummary,
+  all: ProductSummary[],
+  limit: number = RELATED_PRODUCTS_LIMIT,
+): ProductSummary[] {
+  const others = all.filter((p) => p.slug !== current.slug);
+  const isSameCategory = (p: ProductSummary) =>
+    current.category_id !== null && p.category_id === current.category_id;
+  const ordered = [
+    ...sortProducts(
+      others.filter(isSameCategory),
+      "featured",
+    ),
+    ...sortProducts(
+      others.filter((p) => !isSameCategory(p)),
+      "featured",
+    ),
+  ];
+  return ordered.slice(0, Math.max(0, limit));
+}
+
+/**
+ * Related products for a PDP — one batched catalogue read (listProducts
+ * fetches products + primary images), then the pure pick above. Throws
+ * CatalogueUnavailableError when the catalogue cannot be read; the PDP
+ * catches it and renders without the section, never an error.
+ */
+export async function getRelatedProducts(
+  current: ProductSummary,
+  limit: number = RELATED_PRODUCTS_LIMIT,
+): Promise<ProductSummary[]> {
+  const { products } = await listProducts(parseListingParams({}));
+  return pickRelatedProducts(current, products, limit);
+}
+
+// ---------------------------------------------------------------------------
 // Supabase reads (anon SELECT only; RLS limits rows to public ones)
 // ---------------------------------------------------------------------------
 
