@@ -14,7 +14,9 @@ import { connection } from "next/server";
  * the product, reviewer (name from the order), stars, sub-ratings,
  * body, and the order reference (link to the admin order page).
  * Approve publishes it; Reject hides it — rejected reviews are
- * KEPT, never deleted, and can be approved later.
+ * KEPT, never deleted by Reject, and can be approved later.
+ * Delete is separate: it removes the row for good, and the
+ * button asks for confirmation first.
  *
  * The empty queue is the normal state at launch (no real reviews
  * yet): the page says so plainly, in the admin area only — the
