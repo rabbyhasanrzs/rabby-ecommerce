@@ -133,7 +133,10 @@ export default function OrderStatusForm({
       </label>
       <label className="block">
         <span className="mb-1 block text-sm font-semibold text-text">
-          Note{status === "cancelled" ? " (cancel reason — required)" : " (optional)"}
+          Note
+          {status === "cancelled"
+            ? " (cancel reason — required, the customer will see this)"
+            : " (optional — the customer will see this)"}
         </span>
         <input
           type="text"

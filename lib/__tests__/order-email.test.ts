@@ -283,7 +283,7 @@ describe("sendOrderConfirmationEmail", () => {
 });
 
 describe("ORDER_STATUS_EMAIL_TRIGGERS", () => {
-  it("covers every forward step plus Cancelled — and nothing else", () => {
+  it("covers every forward step plus Cancelled, Returned, and Refunded — and nothing else", () => {
     expect([...ORDER_STATUS_EMAIL_TRIGGERS]).toEqual([
       "confirmed",
       "processing",
@@ -292,10 +292,12 @@ describe("ORDER_STATUS_EMAIL_TRIGGERS", () => {
       "out_for_delivery",
       "delivered",
       "cancelled",
+      "returned",
+      "refunded",
     ]);
     // Placed is excluded (the confirmation email covers it);
-    // Returned / Refunded / Failed do not trigger an email in v1.
-    for (const excluded of ["placed", "returned", "refunded", "failed"]) {
+    // Failed is excluded (no live path sets the order status).
+    for (const excluded of ["placed", "failed"]) {
       expect(isOrderStatusEmailTrigger(excluded)).toBe(false);
     }
     for (const trigger of ORDER_STATUS_EMAIL_TRIGGERS) {
@@ -313,6 +315,8 @@ describe("buildOrderStatusEmail", () => {
     out_for_delivery: "Out for Delivery",
     delivered: "Delivered",
     cancelled: "Cancelled",
+    returned: "Returned",
+    refunded: "Refunded",
   };
 
   it("has the right subject, status line, items, total, and track link per status", () => {
@@ -343,7 +347,46 @@ describe("buildOrderStatusEmail", () => {
     }
   });
 
-  it("includes the cancel reason only for a cancelled order", () => {
+  it("uses the approved meaning lines for returned and refunded", () => {
+    const returned = buildOrderStatusEmail(
+      STATUS_ORDER,
+      CUSTOMER_EMAIL,
+      SENDER,
+      "returned",
+    );
+    expect(returned.subject).toBe(
+      "Your RabbY order RB-2026-123456 is now Returned",
+    );
+    expect(returned.text).toContain(
+      "Your return has been received. We'll check the sunglasses and let you know about your exchange or refund.",
+    );
+    // The apostrophe is HTML-escaped in the html body.
+    expect(returned.html).toContain("Your return has been received.");
+    expect(returned.html).toContain(
+      "let you know about your exchange or refund.",
+    );
+
+    const refunded = buildOrderStatusEmail(
+      STATUS_ORDER,
+      CUSTOMER_EMAIL,
+      SENDER,
+      "refunded",
+    );
+    expect(refunded.subject).toBe(
+      "Your RabbY order RB-2026-123456 is now Refunded",
+    );
+    expect(refunded.text).toContain(
+      "Your refund has been processed. We'll be in touch about how it reaches you.",
+    );
+    expect(refunded.html).toContain("Your refund has been processed.");
+    // No refund timing / method promise anywhere in either body.
+    for (const body of [refunded.text, refunded.html]) {
+      expect(body).not.toMatch(/within \d+ days/i);
+      expect(body).not.toContain("back to your bKash");
+    }
+  });
+
+  it("renders the admin note for cancelled, returned, and refunded — never for other statuses", () => {
     const cancelled = buildOrderStatusEmail(
       STATUS_ORDER,
       CUSTOMER_EMAIL,
@@ -353,6 +396,26 @@ describe("buildOrderStatusEmail", () => {
     );
     expect(cancelled.text).toContain("Reason: Customer asked to cancel");
     expect(cancelled.html).toContain("Reason: Customer asked to cancel");
+
+    const returned = buildOrderStatusEmail(
+      STATUS_ORDER,
+      CUSTOMER_EMAIL,
+      SENDER,
+      "returned",
+      "Refund sent to your bKash",
+    );
+    expect(returned.text).toContain("Note: Refund sent to your bKash");
+    expect(returned.html).toContain("Note: Refund sent to your bKash");
+
+    const refunded = buildOrderStatusEmail(
+      STATUS_ORDER,
+      CUSTOMER_EMAIL,
+      SENDER,
+      "refunded",
+      "Refund sent to your bKash",
+    );
+    expect(refunded.text).toContain("Note: Refund sent to your bKash");
+    expect(refunded.html).toContain("Note: Refund sent to your bKash");
 
     const shipped = buildOrderStatusEmail(
       STATUS_ORDER,
@@ -399,7 +462,7 @@ describe("sendOrderStatusEmail", () => {
 
   it("skips without fetching or sending for an excluded status", async () => {
     withGmailConfigured();
-    for (const status of ["placed", "returned", "refunded", "failed"]) {
+    for (const status of ["placed", "failed"]) {
       const result = await sendOrderStatusEmail({
         reference: "RB-2026-123456",
         status,
@@ -468,6 +531,35 @@ describe("sendOrderStatusEmail", () => {
         recipient: CUSTOMER_EMAIL,
         result: "sent",
       }),
+    );
+  });
+
+  it("sends for returned and refunded moves and logs each attempt", async () => {
+    withGmailConfigured();
+    for (const [status, previousStatus] of [
+      ["returned", "delivered"],
+      ["refunded", "returned"],
+    ] as const) {
+      const result = await sendOrderStatusEmail({
+        reference: "RB-2026-123456",
+        status,
+        previousStatus,
+      });
+      expect(result).toEqual({ status: "sent" });
+    }
+    expect(sendMailMock).toHaveBeenCalledTimes(2);
+    const subjects = sendMailMock.mock.calls.map(
+      (call) => call[0].subject as string,
+    );
+    expect(subjects).toEqual([
+      "Your RabbY order RB-2026-123456 is now Returned",
+      "Your RabbY order RB-2026-123456 is now Refunded",
+    ]);
+    expect(logAttemptMock).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "returned", result: "sent" }),
+    );
+    expect(logAttemptMock).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "refunded", result: "sent" }),
     );
   });
 
