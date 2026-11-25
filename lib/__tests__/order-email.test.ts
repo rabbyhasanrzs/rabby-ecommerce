@@ -2,10 +2,13 @@
  * @vitest-environment node
  */
 import {
+  buildBackInStockEmail,
   buildOrderConfirmationEmail,
   buildOrderStatusEmail,
   isOrderStatusEmailTrigger,
   ORDER_STATUS_EMAIL_TRIGGERS,
+  sendBackInStockAlert,
+  sendBackInStockAlertsForProduct,
   sendOrderConfirmationEmail,
   sendOrderStatusEmail,
   type OrderStatusEmailOrder,
@@ -14,13 +17,21 @@ import type { AdminOrderDetail } from "@/app/admin/(protected)/admin-data";
 import type { OrderDetail } from "@/lib/supabase/orders";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { sendMailMock, lookupOrderMock, adminGetOrderMock, logAttemptMock } =
-  vi.hoisted(() => ({
-    sendMailMock: vi.fn(),
-    lookupOrderMock: vi.fn(),
-    adminGetOrderMock: vi.fn(),
-    logAttemptMock: vi.fn(),
-  }));
+const {
+  sendMailMock,
+  lookupOrderMock,
+  adminGetOrderMock,
+  logAttemptMock,
+  listAlertsMock,
+  claimAlertsMock,
+} = vi.hoisted(() => ({
+  sendMailMock: vi.fn(),
+  lookupOrderMock: vi.fn(),
+  adminGetOrderMock: vi.fn(),
+  logAttemptMock: vi.fn(),
+  listAlertsMock: vi.fn(),
+  claimAlertsMock: vi.fn(),
+}));
 
 /**
  * The email module must never send a real email in tests: mock the
@@ -35,6 +46,8 @@ vi.mock("nodemailer", () => ({
 vi.mock("@/app/admin/(protected)/admin-data", () => ({
   adminGetOrder: adminGetOrderMock,
   logNotificationAttempt: logAttemptMock,
+  adminListStockAlertSubscriptions: listAlertsMock,
+  adminClaimStockAlerts: claimAlertsMock,
 }));
 
 vi.mock("@/lib/supabase/orders", () => ({
@@ -138,6 +151,8 @@ beforeEach(() => {
   lookupOrderMock.mockResolvedValue(ORDER_FIXTURE);
   adminGetOrderMock.mockResolvedValue(ADMIN_ORDER_FIXTURE);
   logAttemptMock.mockResolvedValue(undefined);
+  listAlertsMock.mockResolvedValue([]);
+  claimAlertsMock.mockResolvedValue([]);
 });
 
 describe("buildOrderConfirmationEmail", () => {
@@ -632,5 +647,261 @@ describe("sendOrderStatusEmail", () => {
     });
     expect(result).toEqual({ status: "sent" });
     expect(sendMailMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Back-in-stock alerts (S-7; no documented scope, owner-approved
+// standard setup)
+// ---------------------------------------------------------------------------
+
+const BACK_IN_STOCK_TOKEN = "123e4567-e89b-12d3-a456-426614174000";
+const BACK_IN_STOCK_PRODUCT = {
+  name: "SAMPLE Futuristic A",
+  slug: "sample-futuristic",
+};
+
+describe("buildBackInStockEmail", () => {
+  it("builds the subject with the product name", () => {
+    const email = buildBackInStockEmail(
+      BACK_IN_STOCK_PRODUCT,
+      CUSTOMER_EMAIL,
+      SENDER,
+      BACK_IN_STOCK_TOKEN,
+    );
+    expect(email.subject).toBe(
+      "Good news — SAMPLE Futuristic A is back in stock",
+    );
+    expect(email.from).toBe(`RabbY <${SENDER}>`);
+    expect(email.to).toBe(CUSTOMER_EMAIL);
+  });
+
+  it("links the product page and states first-come-first-served", () => {
+    const email = buildBackInStockEmail(
+      BACK_IN_STOCK_PRODUCT,
+      CUSTOMER_EMAIL,
+      SENDER,
+      BACK_IN_STOCK_TOKEN,
+    );
+    expect(email.text).toContain(
+      "https://rabby-ecommerce-uhrm.vercel.app/product/sample-futuristic",
+    );
+    expect(email.text).toContain(
+      "we can't hold one for you, so if you want it, order soon.",
+    );
+    expect(email.html).toContain(
+      "we can't hold one for you, so if you want it, order soon.",
+    );
+  });
+
+  it("promises no price and no hold anywhere", () => {
+    const email = buildBackInStockEmail(
+      BACK_IN_STOCK_PRODUCT,
+      CUSTOMER_EMAIL,
+      SENDER,
+      BACK_IN_STOCK_TOKEN,
+    );
+    // No Taka figure and no price word in either body — the PDP is
+    // the source of truth for the live price.
+    expect(email.text).not.toContain("৳");
+    expect(email.html).not.toContain("৳");
+    expect(email.text.toLowerCase()).not.toContain("price");
+    expect(email.html.toLowerCase()).not.toContain("price");
+  });
+
+  it("carries the unsubscribe link in text and html", () => {
+    const email = buildBackInStockEmail(
+      BACK_IN_STOCK_PRODUCT,
+      CUSTOMER_EMAIL,
+      SENDER,
+      BACK_IN_STOCK_TOKEN,
+    );
+    const unsubscribeUrl = `https://rabby-ecommerce-uhrm.vercel.app/api/stock-alerts/unsubscribe?token=${BACK_IN_STOCK_TOKEN}`;
+    expect(email.text).toContain(unsubscribeUrl);
+    expect(email.html).toContain(unsubscribeUrl);
+    expect(email.text).toContain("you won't hear from us about it again");
+  });
+});
+
+describe("sendBackInStockAlert", () => {
+  function withGmailConfigured() {
+    vi.stubEnv("GMAIL_USER", SENDER);
+    vi.stubEnv("GMAIL_APP_PASSWORD", "mock-app-password");
+  }
+
+  it("sends via Gmail SMTP and logs the sent attempt as back_in_stock", async () => {
+    withGmailConfigured();
+    const result = await sendBackInStockAlert({
+      productName: BACK_IN_STOCK_PRODUCT.name,
+      productSlug: BACK_IN_STOCK_PRODUCT.slug,
+      recipient: CUSTOMER_EMAIL,
+      unsubscribeToken: BACK_IN_STOCK_TOKEN,
+    });
+    expect(result).toEqual({ status: "sent" });
+    expect(sendMailMock).toHaveBeenCalledTimes(1);
+    const sent = sendMailMock.mock.calls[0][0];
+    expect(sent.to).toBe(CUSTOMER_EMAIL);
+    expect(sent.subject).toBe(
+      "Good news — SAMPLE Futuristic A is back in stock",
+    );
+    expect(logAttemptMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderReference: "sample-futuristic",
+        type: "back_in_stock",
+        status: "back_in_stock",
+        recipient: CUSTOMER_EMAIL,
+        result: "sent",
+      }),
+    );
+  });
+
+  it("skips silently when the env vars are missing (no send)", async () => {
+    const result = await sendBackInStockAlert({
+      productName: BACK_IN_STOCK_PRODUCT.name,
+      productSlug: BACK_IN_STOCK_PRODUCT.slug,
+      recipient: CUSTOMER_EMAIL,
+      unsubscribeToken: BACK_IN_STOCK_TOKEN,
+    });
+    expect(result).toEqual({
+      status: "skipped",
+      reason: "email not configured",
+    });
+    expect(sendMailMock).not.toHaveBeenCalled();
+    expect(logAttemptMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "back_in_stock",
+        result: "skipped",
+        error: "email not configured",
+      }),
+    );
+  });
+
+  it("returns failed (never throws) when Gmail rejects the send", async () => {
+    withGmailConfigured();
+    sendMailMock.mockRejectedValue(new Error("Invalid credentials"));
+    const result = await sendBackInStockAlert({
+      productName: BACK_IN_STOCK_PRODUCT.name,
+      productSlug: BACK_IN_STOCK_PRODUCT.slug,
+      recipient: CUSTOMER_EMAIL,
+      unsubscribeToken: BACK_IN_STOCK_TOKEN,
+    });
+    expect(result).toEqual({ status: "failed", reason: "send failed" });
+    expect(logAttemptMock).toHaveBeenCalledWith(
+      expect.objectContaining({ result: "failed", error: "send failed" }),
+    );
+  });
+});
+
+describe("sendBackInStockAlertsForProduct", () => {
+  const PRODUCT_ID = "123e4567-e89b-12d3-a456-426614174000";
+  const PENDING = [
+    {
+      id: "sub-1",
+      product_id: PRODUCT_ID,
+      product_slug: "sample-futuristic",
+      product_name: "SAMPLE Futuristic A",
+      email: "first@example.com",
+      status: "pending" as const,
+      created_at: "2026-11-26T00:00:00.000Z",
+      sent_at: null,
+    },
+    {
+      id: "sub-2",
+      product_id: PRODUCT_ID,
+      product_slug: "sample-futuristic",
+      product_name: "SAMPLE Futuristic A",
+      email: "second@example.com",
+      status: "pending" as const,
+      created_at: "2026-11-26T00:00:00.000Z",
+      sent_at: null,
+    },
+  ];
+
+  function withGmailConfigured() {
+    vi.stubEnv("GMAIL_USER", SENDER);
+    vi.stubEnv("GMAIL_APP_PASSWORD", "mock-app-password");
+  }
+
+  function trigger() {
+    return sendBackInStockAlertsForProduct({
+      productId: PRODUCT_ID,
+      productName: BACK_IN_STOCK_PRODUCT.name,
+      productSlug: BACK_IN_STOCK_PRODUCT.slug,
+    });
+  }
+
+  it("sends one email per claimed subscriber and reports the counts", async () => {
+    withGmailConfigured();
+    listAlertsMock.mockResolvedValue(PENDING);
+    claimAlertsMock.mockResolvedValue(
+      PENDING.map((row) => ({
+        id: row.id,
+        email: row.email,
+        unsubscribeToken: BACK_IN_STOCK_TOKEN,
+      })),
+    );
+    const result = await trigger();
+    expect(result).toEqual({ sent: 2, failed: 0, skipped: 0 });
+    expect(listAlertsMock).toHaveBeenCalledWith(PRODUCT_ID, "pending");
+    expect(claimAlertsMock).toHaveBeenCalledWith(PRODUCT_ID, [
+      "sub-1",
+      "sub-2",
+    ]);
+    expect(sendMailMock).toHaveBeenCalledTimes(2);
+    const recipients = sendMailMock.mock.calls.map(
+      (call) => call[0].to as string,
+    );
+    expect(recipients).toEqual(["first@example.com", "second@example.com"]);
+  });
+
+  it("does nothing when nobody is waiting", async () => {
+    withGmailConfigured();
+    const result = await trigger();
+    expect(result).toEqual({ sent: 0, failed: 0, skipped: 0 });
+    expect(claimAlertsMock).not.toHaveBeenCalled();
+    expect(sendMailMock).not.toHaveBeenCalled();
+  });
+
+  it("does NOT claim rows when email is not configured — they stay pending", async () => {
+    listAlertsMock.mockResolvedValue(PENDING);
+    const result = await trigger();
+    expect(result).toEqual({ sent: 0, failed: 0, skipped: 2 });
+    expect(claimAlertsMock).not.toHaveBeenCalled();
+    expect(sendMailMock).not.toHaveBeenCalled();
+    // One skipped log row per pending subscriber, so the admin can
+    // see the gap instead of silently consuming the subscriptions.
+    expect(logAttemptMock).toHaveBeenCalledTimes(2);
+    expect(logAttemptMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "back_in_stock",
+        result: "skipped",
+        error: "email not configured",
+      }),
+    );
+  });
+
+  it("counts a failed send without failing the rest (never throws)", async () => {
+    withGmailConfigured();
+    listAlertsMock.mockResolvedValue(PENDING);
+    claimAlertsMock.mockResolvedValue(
+      PENDING.map((row) => ({
+        id: row.id,
+        email: row.email,
+        unsubscribeToken: BACK_IN_STOCK_TOKEN,
+      })),
+    );
+    sendMailMock
+      .mockResolvedValueOnce({ messageId: "mock-1" })
+      .mockRejectedValueOnce(new Error("Invalid credentials"));
+    const result = await trigger();
+    expect(result).toEqual({ sent: 1, failed: 1, skipped: 0 });
+  });
+
+  it("returns zeros (never throws) when the list call fails", async () => {
+    withGmailConfigured();
+    listAlertsMock.mockRejectedValue(new Error("Admin request failed"));
+    const result = await trigger();
+    expect(result).toEqual({ sent: 0, failed: 0, skipped: 0 });
+    expect(sendMailMock).not.toHaveBeenCalled();
   });
 });

@@ -18,7 +18,7 @@ vi.mock("next/navigation", () => ({
  * right next step for a timeout or an MFA code), and a non-JSON
  * answer must do the same instead of showing the mystery error.
  */
-function renderRow() {
+function renderRow(waitingCount = 0) {
   return render(
     <table>
       <tbody>
@@ -27,6 +27,7 @@ function renderRow() {
           productName="SAMPLE Futuristic A"
           colour="Black"
           stockTotal={0}
+          waitingCount={waitingCount}
         />
       </tbody>
     </table>,
@@ -130,5 +131,21 @@ describe("InventoryRow save errors", () => {
       ).toBeInTheDocument(),
     );
     expect(pushMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("InventoryRow waiting count (S-7 back-in-stock)", () => {
+  it("shows a dash when nobody is waiting", () => {
+    const { container } = renderRow(0);
+    expect(container.querySelector("td:nth-child(4)")).toHaveTextContent(
+      "—",
+    );
+  });
+
+  it("shows the pending subscriber count when people are waiting", () => {
+    const { container } = renderRow(3);
+    expect(container.querySelector("td:nth-child(4)")).toHaveTextContent(
+      "3",
+    );
   });
 });

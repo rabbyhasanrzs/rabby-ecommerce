@@ -15,11 +15,14 @@ export default function InventoryRow({
   productName,
   colour,
   stockTotal,
+  waitingCount,
 }: {
   productId: string;
   productName: string;
   colour: string | null;
   stockTotal: number;
+  /** S-7 back-in-stock: pending subscribers waiting for this product. */
+  waitingCount: number;
 }) {
   const router = useRouter();
   const [stock, setStock] = useState(String(stockTotal));
@@ -124,6 +127,13 @@ export default function InventoryRow({
             {message}
           </span>
         ) : null}
+      </td>
+      <td className="px-4 py-3 text-text">
+        {waitingCount > 0 ? (
+          <span className="font-semibold">{waitingCount}</span>
+        ) : (
+          <span className="text-text-secondary">—</span>
+        )}
       </td>
       <td className="px-4 py-3">
         <button

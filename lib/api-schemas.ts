@@ -144,3 +144,24 @@ export const reviewSubmitRequestSchema = z.object({
 });
 
 export type ReviewSubmitRequest = z.infer<typeof reviewSubmitRequestSchema>;
+
+/**
+ * POST /api/stock-alerts — a back-in-stock alert subscribe (S-7;
+ * no documented scope, owner-approved standard setup). The product
+ * slug is the out-of-stock product; the email is the only identity
+ * (guest-first, no accounts) and the only channel. The email
+ * message is the exact one the checkout form already uses
+ * (lib/checkout-validation.ts) — reused, not invented.
+ */
+export const stockAlertSubscribeSchema = z.object({
+  productSlug: slugSchema,
+  email: z
+    .string()
+    .trim()
+    .email("Enter a valid email address.")
+    .max(100),
+});
+
+export type StockAlertSubscribeRequest = z.infer<
+  typeof stockAlertSubscribeSchema
+>;
