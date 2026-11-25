@@ -202,7 +202,7 @@ describe("POST /api/admin/orders/[reference]/status", () => {
     });
   });
 
-  it("delegates the trigger decision to the send function for Returned (no email in v1, decided there)", async () => {
+  it("sends the Returned email via the send function (Returned now triggers)", async () => {
     adminGetOrderMock.mockResolvedValue({ order: { status: "delivered" } });
     const res = await postStatus({ status: "returned" });
     expect(res.status).toBe(200);

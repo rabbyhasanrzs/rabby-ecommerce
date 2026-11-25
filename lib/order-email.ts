@@ -40,11 +40,12 @@ import {
  *
  * Order status emails (S-7, 1.x-4, F18) live here too — see
  * ORDER_STATUS_EMAIL_TRIGGERS below. One short email per admin
- * status move (Confirmed -> Delivered, plus Cancelled), sent
- * automatically from POST /api/admin/orders/[reference]/status.
- * Placed is excluded — the confirmation email above already covers
- * it. Returned / Refunded / Failed do NOT trigger an email in v1
- * (owner decision). Every attempt is written to notification_log
+ * status move (Confirmed -> Delivered, plus Cancelled, Returned,
+ * Refunded), sent automatically from POST /api/admin/orders/
+ * [reference]/status. Placed is excluded — the confirmation email
+ * above already covers it. Failed never sends — no live path sets
+ * the order status (see the S-7 returned-emails investigation
+ * note). Every attempt is written to notification_log
  * (migration 0012) via the admin-only log_notification function —
  * the recipient email lives in that admin-only table, never in
  * console / Vercel logs.
@@ -244,10 +245,11 @@ export async function sendOrderConfirmationEmail(input: {
 
 /**
  * Statuses that trigger a status email. All forward steps from
- * Confirmed to Delivered, plus Cancelled. Placed is excluded — the
- * order-confirmation email already covers it, so the customer is
- * never emailed twice for one event. Returned / Refunded / Failed
- * do NOT trigger an email in v1 (owner decision).
+ * Confirmed to Delivered, plus Cancelled, Returned, and Refunded.
+ * Placed is excluded — the order-confirmation email already covers
+ * it, so the customer is never emailed twice for one event. Failed
+ * is excluded too — no live path sets the order status, so it can
+ * never fire (see the S-7 returned-emails investigation note).
  *
  * Free movement (PR #21) means one email per move, never a burst
  * for skipped steps: the admin jumps Placed -> Delivered directly,
@@ -261,6 +263,8 @@ export const ORDER_STATUS_EMAIL_TRIGGERS = [
   "out_for_delivery",
   "delivered",
   "cancelled",
+  "returned",
+  "refunded",
 ] as const;
 
 export function isOrderStatusEmailTrigger(status: string): boolean {
@@ -276,6 +280,8 @@ const ORDER_STATUS_EMAIL_LABELS: Record<string, string> = {
   out_for_delivery: "Out for Delivery",
   delivered: "Delivered",
   cancelled: "Cancelled",
+  returned: "Returned",
+  refunded: "Refunded",
 };
 
 /** One plain-words line saying what the new status means. */
@@ -289,6 +295,22 @@ const ORDER_STATUS_EMAIL_LINES: Record<string, string> = {
   delivered:
     "Your order has been delivered. Thank you for shopping with RabbY.",
   cancelled: "Your order has been cancelled.",
+  // S-7 returned emails: "Returned" means the item is back at the
+  // shop (owner assumption — see the PR body). The Refunded line
+  // stays vague on purpose: refund timing / method / who pays
+  // return shipping are unsettled, so the email promises none of
+  // them; the per-order facts travel in the admin's note instead.
+  returned:
+    "Your return has been received. We'll check the sunglasses and let you know about your exchange or refund.",
+  refunded:
+    "Your refund has been processed. We'll be in touch about how it reaches you.",
+};
+
+/** Label for the admin note in the email, per note-bearing status. */
+const NOTE_LABELS: Record<string, string> = {
+  cancelled: "Reason",
+  returned: "Note",
+  refunded: "Note",
 };
 
 /**
@@ -311,8 +333,11 @@ export interface OrderStatusEmailOrder {
 /**
  * Pure builder: order status email for one order. Same shape as
  * buildOrderConfirmationEmail (subject / text / html, no secrets).
- * The `note` is the admin's cancel reason — rendered only for a
- * cancelled order, never for other statuses.
+ * The `note` is the admin's note — rendered for cancelled (as the
+ * cancel reason), returned, and refunded, where it is the only
+ * place the per-order facts live; never for other statuses. The
+ * note goes to the customer verbatim, so the admin form labels it
+ * customer-visible.
  */
 export function buildOrderStatusEmail(
   order: OrderStatusEmailOrder,
@@ -325,8 +350,11 @@ export function buildOrderStatusEmail(
   const meaning = ORDER_STATUS_EMAIL_LINES[status] ?? "";
   const trackUrl = `${SITE_URL}/orders?ref=${order.reference}`;
   const subject = `Your RabbY order ${order.reference} is now ${label}`;
-  const cancelReason =
-    status === "cancelled" && note && note.trim().length > 0
+  // The note is customer-visible for the note-bearing statuses
+  // only — every other status ignores it even when one is present.
+  const noteLabel = NOTE_LABELS[status];
+  const adminNote =
+    noteLabel !== undefined && note && note.trim().length > 0
       ? note.trim()
       : null;
 
@@ -342,7 +370,7 @@ export function buildOrderStatusEmail(
     ``,
     `Your order ${order.reference} is now ${label}.`,
     meaning,
-    ...(cancelReason ? [`Reason: ${cancelReason}`] : []),
+    ...(adminNote && noteLabel ? [`${noteLabel}: ${adminNote}`] : []),
     ``,
     `Items:`,
     itemLines,
@@ -365,8 +393,8 @@ export function buildOrderStatusEmail(
     `<p>Hi ${escapeHtml(order.customerName)},</p>`,
     `<p>Your order <strong>${escapeHtml(order.reference)}</strong> is now <strong>${escapeHtml(label)}</strong>.</p>`,
     ...(meaning ? [`<p>${escapeHtml(meaning)}</p>`] : []),
-    ...(cancelReason
-      ? [`<p>Reason: ${escapeHtml(cancelReason)}</p>`]
+    ...(adminNote && noteLabel
+      ? [`<p>${escapeHtml(noteLabel)}: ${escapeHtml(adminNote)}</p>`]
       : []),
     `<table style="width:100%;border-collapse:collapse;">${itemRows}</table>`,
     `<p><strong>Total: ${formatPriceBdt(order.totalBdt)}</strong></p>`,
@@ -435,11 +463,11 @@ export async function sendOrderStatusEmail(input: {
    * did not change).
    */
   previousStatus?: string | null;
-  /** The cancel reason (admin note) — rendered only for cancelled. */
+  /** The admin note — rendered in the email for cancelled, returned, and refunded (customer-visible); ignored for other statuses. */
   note?: string | null;
 }): Promise<EmailSendResult> {
-  // 1. Trigger allow-list — Placed / Returned / Refunded / Failed
-  //    never send in v1. This is not a failure: nothing was attempted.
+  // 1. Trigger allow-list — Placed / Failed never send. This is not
+  //    a failure: nothing was attempted.
   if (!isOrderStatusEmailTrigger(input.status)) {
     return { status: "skipped", reason: "status does not trigger an email" };
   }

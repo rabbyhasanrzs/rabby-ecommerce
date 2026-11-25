@@ -235,6 +235,15 @@ describe("order status form follows the allowed list after a refresh", () => {
   });
 });
 
+describe("the note is labelled customer-visible", () => {
+  it("tells the admin the note goes to the customer", () => {
+    renderForm({ currentStatus: "delivered", allowedStatuses: ["returned"] });
+    expect(
+      screen.getByText(/the customer will see this/i),
+    ).toBeInTheDocument();
+  });
+});
+
 describe("cancel still requires a reason", () => {
   it("blocks Cancel with an empty note and does not call the API", async () => {
     const fetchMock = vi.fn();
