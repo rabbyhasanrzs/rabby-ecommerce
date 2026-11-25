@@ -13,7 +13,7 @@ vi.mock("@/lib/stock-alerts", () => ({
   unsubscribeStockAlert: unsubscribeMock,
 }));
 
-const TOKEN = "123e4567-e89b-12d3-a456-426614174000";
+const TOKEN = "00000000-0000-0000-0000-000000000000";
 
 beforeEach(() => {
   vi.clearAllMocks();

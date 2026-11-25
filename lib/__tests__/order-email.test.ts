@@ -655,7 +655,7 @@ describe("sendOrderStatusEmail", () => {
 // standard setup)
 // ---------------------------------------------------------------------------
 
-const BACK_IN_STOCK_TOKEN = "123e4567-e89b-12d3-a456-426614174000";
+const BACK_IN_STOCK_TOKEN = "00000000-0000-0000-0000-000000000000";
 const BACK_IN_STOCK_PRODUCT = {
   name: "SAMPLE Futuristic A",
   slug: "sample-futuristic",
@@ -793,7 +793,7 @@ describe("sendBackInStockAlert", () => {
 });
 
 describe("sendBackInStockAlertsForProduct", () => {
-  const PRODUCT_ID = "123e4567-e89b-12d3-a456-426614174000";
+  const PRODUCT_ID = "00000000-0000-0000-0000-000000000000";
   const PENDING = [
     {
       id: "sub-1",

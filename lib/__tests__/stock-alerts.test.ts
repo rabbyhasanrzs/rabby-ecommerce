@@ -154,7 +154,7 @@ describe("subscribeStockAlert", () => {
 // ---------------------------------------------------------------------------
 
 describe("unsubscribeStockAlert", () => {
-  const TOKEN = "123e4567-e89b-12d3-a456-426614174000";
+  const TOKEN = "00000000-0000-0000-0000-000000000000";
 
   it("calls unsubscribe_stock_alert with the token", async () => {
     const result = await unsubscribeStockAlert(TOKEN);
