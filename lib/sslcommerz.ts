@@ -131,10 +131,10 @@ const initiateResponseSchema = z.object({
  * Customer fields: the checkout form collects name, email, phone
  * and address — but NOT city or postcode, so those two are mapped
  * from the delivery zone (Dhaka for Inside Dhaka, Bangladesh
- * otherwise; postcode is sent empty). The staging sandbox test is
- * the verification that SSLCommerz accepts that mapping — if it
- * rejects the initiate, the failure surfaces plainly at checkout
- * and collecting a postcode becomes the follow-up, not v1.
+ * otherwise; postcode is sent empty). Verified against the live
+ * sandbox 2026-11-26: an empty cus_postcode is accepted — the
+ * initiate rejection that day was the shipping_method (see below),
+ * not the postcode.
  *
  * Throws SslcommerzError on any failure (network, HTTP error, bad
  * response, or a FAILED status). The error message never contains
@@ -170,7 +170,13 @@ export async function initiateSslcommerzPayment(
     cus_phone: input.customerPhone,
     product_name: "RabbY sunglasses order",
     product_category: "Sunglasses",
-    shipping_method: "Courier",
+    // "NO", not "Courier": the gateway requires ship_* fields for
+    // Courier/YES and we do not use SSLCommerz logistics — delivery
+    // is handled by our own courier and the customer address is
+    // already in cus_add1. Verified against the live sandbox
+    // 2026-11-26: "Courier" with no ship_* fields is rejected with
+    // "'ship_name' is missing", "NO" is accepted.
+    shipping_method: "NO",
     num_of_item: String(input.totalQuantity),
   });
 
@@ -212,6 +218,13 @@ export async function initiateSslcommerzPayment(
     !parsed.data.sessionkey ||
     !parsed.data.GatewayPageURL
   ) {
+    // Log the gateway's own reason (status + failedreason only —
+    // never the request body, which carries the store password) so
+    // a rejected initiate is diagnosable from the server logs.
+    console.error("[sslcommerz] initiate rejected", {
+      status: parsed.data.status,
+      failedreason: parsed.data.failedreason ?? "",
+    });
     throw new SslcommerzError(
       "Online payment could not be started. Please choose another payment method or contact us.",
     );

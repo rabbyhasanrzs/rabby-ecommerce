@@ -175,6 +175,11 @@ describe("initiateSslcommerzPayment", () => {
     expect(body.get("cus_country")).toBe("Bangladesh");
     expect(body.get("product_name")).toBe("RabbY sunglasses order");
     expect(body.get("num_of_item")).toBe("2");
+    // shipping_method is "NO": the gateway requires ship_* fields
+    // for "Courier" and we do not use SSLCommerz logistics (see
+    // lib/sslcommerz.ts) — "Courier" with no ship_* fields is
+    // rejected by the sandbox with "'ship_name' is missing".
+    expect(body.get("shipping_method")).toBe("NO");
     // The store password travels in the body — it must never be
     // logged; the client logs nothing, so assert the body carries
     // it (the gateway needs it) and nothing else asserts on it.
@@ -206,6 +211,30 @@ describe("initiateSslcommerzPayment", () => {
     await expect(initiateSslcommerzPayment(input)).rejects.toThrow(
       /could not be started/i,
     );
+  });
+
+  it("logs the gateway's reason (status + failedreason only) when the initiate is rejected", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    fetchMock.mockResolvedValue(
+      jsonResponse({
+        status: "FAILED",
+        failedreason: "Invalid Information! 'ship_name' is missing.",
+      }),
+    );
+
+    await expect(initiateSslcommerzPayment(input)).rejects.toThrow(
+      /could not be started/i,
+    );
+    expect(errorSpy).toHaveBeenCalledWith("[sslcommerz] initiate rejected", {
+      status: "FAILED",
+      failedreason: "Invalid Information! 'ship_name' is missing.",
+    });
+    // The request body carries the store password — it must never
+    // be logged, so nothing in the log may contain it.
+    expect(errorSpy.mock.calls.flat().join(" ")).not.toContain(
+      "test-password",
+    );
+    errorSpy.mockRestore();
   });
 
   it("throws a plain-words error when the network fails", async () => {
