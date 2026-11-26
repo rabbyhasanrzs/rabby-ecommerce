@@ -1,6 +1,7 @@
 "use client";
 
 import { productSaveSchema } from "@/app/admin/(protected)/admin-schemas";
+import { ACTIVITIES } from "@/lib/activities";
 import { getSessionTimeoutKind } from "@/lib/admin-session";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -31,6 +32,8 @@ export interface ProductFormInitial {
   id: string;
   name: string;
   categoryId: string | null;
+  /** Activity slugs tagged in admin (S-7, 1.x-6); [] when untagged. */
+  activities: string[];
   priceBdt: number;
   stockTotal: number;
   status: "active" | "inactive";
@@ -54,6 +57,9 @@ export default function ProductForm({
   const router = useRouter();
   const [name, setName] = useState(initial?.name ?? "");
   const [categoryId, setCategoryId] = useState(initial?.categoryId ?? "");
+  const [activities, setActivities] = useState<string[]>(
+    initial?.activities ?? [],
+  );
   const [price, setPrice] = useState(
     initial ? String(initial.priceBdt) : "",
   );
@@ -77,6 +83,14 @@ export default function ProductForm({
   function handlePhotoChange(file: File | null) {
     setPhotoFile(file);
     setSelectedPhotoName(file ? file.name : null);
+  }
+
+  function toggleActivity(slug: string) {
+    setActivities((current) =>
+      current.includes(slug)
+        ? current.filter((item) => item !== slug)
+        : [...current, slug],
+    );
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -141,6 +155,7 @@ export default function ProductForm({
       const parsed = productSaveSchema.safeParse({
         name: name.trim(),
         categoryId: categoryId === "" ? null : categoryId,
+        activities,
         priceBdt: Number(price),
         stockTotal: Number(stock),
         status,
@@ -233,6 +248,37 @@ export default function ProductForm({
           ))}
         </select>
       </label>
+
+      <fieldset className="block">
+        <legend className="mb-1 block text-sm font-semibold text-text">
+          Activities
+        </legend>
+        <div className="flex flex-wrap gap-4">
+          {ACTIVITIES.map((activity) => (
+            <label
+              key={activity.slug}
+              className="flex min-h-11 cursor-pointer items-center gap-2 text-base text-text"
+            >
+              <input
+                type="checkbox"
+                checked={activities.includes(activity.slug)}
+                onChange={() => toggleActivity(activity.slug)}
+                className="h-5 w-5 accent-action"
+              />
+              {activity.label}
+            </label>
+          ))}
+        </div>
+        <span className="mt-1 block text-sm text-text-secondary">
+          Optional — tick every use this product suits. Activities with
+          no tagged products are never shown on the shop.
+        </span>
+        {errors.activities ? (
+          <span className="mt-1 block text-sm text-error">
+            {errors.activities}
+          </span>
+        ) : null}
+      </fieldset>
 
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="block">

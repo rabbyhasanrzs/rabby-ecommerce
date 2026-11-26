@@ -28,6 +28,11 @@ const migration0012 = readFileSync(
   "utf8",
 );
 
+const migration0015 = readFileSync(
+  join(process.cwd(), "supabase/migrations/0015_s7_shop_by_activity.sql"),
+  "utf8",
+);
+
 const ADMIN_WRITTEN_TABLES = [
   "categories",
   "products",
@@ -336,5 +341,44 @@ describe("migration 0012 — S-7 order status email log", () => {
     expect(migration0012).not.toContain(
       "CREATE OR REPLACE FUNCTION public.admin_get_order",
     );
+  });
+});
+
+describe("migration 0015 — S-7 Shop by Activity", () => {
+  it("adds the activities text[] column, re-run safe, defaulting to an empty array", () => {
+    expect(migration0015).toContain(
+      "ADD COLUMN IF NOT EXISTS activities text[] NOT NULL DEFAULT '{}'",
+    );
+  });
+
+  it("checks every tagged activity against the 4 approved slugs, re-run safe", () => {
+    expect(migration0015).toContain(
+      "DROP CONSTRAINT IF EXISTS products_activities_check",
+    );
+    expect(migration0015).toContain(
+      "CHECK (activities <@ ARRAY['driving', 'sport', 'beach', 'everyday']::text[])",
+    );
+  });
+
+  it("backfills nothing — no invented activity mapping is ever written", () => {
+    // Anchored to line start: the verification comment documents an
+    // UPDATE that must be REJECTED, so a bare substring match would
+    // false-positive on the comment itself.
+    expect(migration0015).not.toMatch(
+      /^UPDATE public\.products SET activities/im,
+    );
+    expect(migration0015).not.toContain("INSERT INTO public.products");
+  });
+
+  it("changes no RLS, grants, or policies (table-level grants already cover the new column)", () => {
+    expect(migration0015).not.toContain("ROW LEVEL SECURITY");
+    expect(migration0015).not.toContain("CREATE POLICY");
+    expect(migration0015).not.toMatch(/^GRANT\s/m);
+  });
+
+  it("touches no other table", () => {
+    expect(migration0015).not.toContain("ALTER TABLE public.orders");
+    expect(migration0015).not.toContain("ALTER TABLE public.categories");
+    expect(migration0015).not.toContain("CREATE TABLE");
   });
 });

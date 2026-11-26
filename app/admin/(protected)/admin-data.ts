@@ -172,6 +172,8 @@ export interface AdminProductRow {
   name: string;
   description: string | null;
   category_id: string | null;
+  /** Activity slugs tagged in admin (S-7, 1.x-6); [] when untagged. */
+  activities: string[];
   price_bdt: number;
   stock_total: number;
   status: string;
@@ -447,7 +449,7 @@ export async function adminListProducts(): Promise<AdminProductRow[]> {
   const { data, error } = await supabase
     .from("products")
     .select(
-      "id,slug,name,description,category_id,price_bdt,stock_total,status,is_demo,created_at,categories(slug,name)",
+      "id,slug,name,description,category_id,activities,price_bdt,stock_total,status,is_demo,created_at,categories(slug,name)",
     )
     .order("name", { ascending: true });
   if (error || !data) {
@@ -467,7 +469,7 @@ export async function adminGetProduct(
   const { data, error } = await supabase
     .from("products")
     .select(
-      "id,slug,name,description,category_id,price_bdt,stock_total,status,is_demo,created_at,categories(slug,name)",
+      "id,slug,name,description,category_id,activities,price_bdt,stock_total,status,is_demo,created_at,categories(slug,name)",
     )
     .eq("id", id)
     .maybeSingle();

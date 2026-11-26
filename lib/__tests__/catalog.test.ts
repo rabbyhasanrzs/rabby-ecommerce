@@ -6,6 +6,7 @@ import {
   getProductBySlug,
   getRelatedProducts,
   isValidSlug,
+  listActivities,
   listProducts,
   parseListingParams,
   pickRelatedProducts,
@@ -37,6 +38,7 @@ function sampleProducts(): ProductSummary[] {
       category_id: "c1",
       category_slug: "women",
       category_name: "Women",
+      activities: ["driving", "everyday"],
       price_bdt: 950,
       stock_total: 12,
       is_demo: true,
@@ -51,6 +53,7 @@ function sampleProducts(): ProductSummary[] {
       category_id: "c2",
       category_slug: "men",
       category_name: "Men",
+      activities: ["driving"],
       price_bdt: 1450,
       stock_total: 8,
       is_demo: true,
@@ -65,6 +68,7 @@ function sampleProducts(): ProductSummary[] {
       category_id: "c2",
       category_slug: "men",
       category_name: "Men",
+      activities: [],
       price_bdt: 3200,
       stock_total: 0,
       is_demo: true,
@@ -77,6 +81,7 @@ function sampleProducts(): ProductSummary[] {
 const baseParams: ListingParams = {
   search: "",
   category: "",
+  activity: "",
   sort: "featured",
   inStockOnly: false,
 };
@@ -143,15 +148,17 @@ describe("parseListingParams", () => {
     expect(parseListingParams({})).toEqual({
       search: "",
       category: "",
+      activity: "",
       sort: "featured",
       inStockOnly: false,
     });
   });
 
-  it("parses search, category, sort, prices, and in-stock toggle", () => {
+  it("parses search, category, activity, sort, prices, and in-stock toggle", () => {
     const parsed = parseListingParams({
       search: "aviator",
       category: "men",
+      activity: "driving",
       sort: "price-asc",
       priceMin: "1000",
       priceMax: "2000",
@@ -159,6 +166,7 @@ describe("parseListingParams", () => {
     });
     expect(parsed.search).toBe("aviator");
     expect(parsed.category).toBe("men");
+    expect(parsed.activity).toBe("driving");
     expect(parsed.sort).toBe("price-asc");
     expect(parsed.priceMin).toBe(1000);
     expect(parsed.priceMax).toBe(2000);
@@ -166,9 +174,14 @@ describe("parseListingParams", () => {
   });
 
   it("falls back to safe defaults on invalid values", () => {
-    const parsed = parseListingParams({ sort: "cheapest", category: "BAD SLUG" });
+    const parsed = parseListingParams({ sort: "cheapest", category: "BAD SLUG", activity: "BAD SLUG" });
     expect(parsed.sort).toBe("featured");
     expect(parsed.category).toBe("");
+    expect(parsed.activity).toBe("");
+  });
+
+  it("keeps a valid-but-unknown activity slug (it filters to zero products, like an unknown category)", () => {
+    expect(parseListingParams({ activity: "golf" }).activity).toBe("golf");
   });
 });
 
@@ -186,6 +199,46 @@ describe("applyListingFilters", () => {
       "sample-aviator-a",
       "sample-futuristic-a",
     ]);
+  });
+
+  it("filters by activity (S-7 Shop by Activity)", () => {
+    expect(
+      applyListingFilters(sampleProducts(), {
+        ...baseParams,
+        activity: "driving",
+      }).map((p) => p.slug),
+    ).toEqual(["sample-round-a", "sample-aviator-a"]);
+    expect(
+      applyListingFilters(sampleProducts(), {
+        ...baseParams,
+        activity: "everyday",
+      }).map((p) => p.slug),
+    ).toEqual(["sample-round-a"]);
+    // An untagged product never matches, and an unknown activity
+    // matches nothing — the empty state, not an error.
+    expect(
+      applyListingFilters(sampleProducts(), {
+        ...baseParams,
+        activity: "beach",
+      }),
+    ).toHaveLength(0);
+    expect(
+      applyListingFilters(sampleProducts(), {
+        ...baseParams,
+        activity: "golf",
+      }),
+    ).toHaveLength(0);
+  });
+
+  it("combines activity with category and search", () => {
+    expect(
+      applyListingFilters(sampleProducts(), {
+        ...baseParams,
+        category: "women",
+        activity: "everyday",
+        search: "round",
+      }).map((p) => p.slug),
+    ).toEqual(["sample-round-a"]);
   });
 
   it("searches name and description, case-insensitive", () => {
@@ -346,6 +399,56 @@ describe("RLS-safe read path (mocked client)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Shop by Activity — S-7 (F17, 1.x-6)
+// ---------------------------------------------------------------------------
+
+describe("listActivities", () => {
+  function mockActivitiesRows(
+    rows: { activities: string[] | null }[],
+  ) {
+    const fakeClient = {
+      from: () => makeBuilder({ data: rows, error: null }),
+    };
+    mockedGetClient.mockReturnValue(
+      fakeClient as unknown as ReturnType<typeof getSupabaseClient>,
+    );
+  }
+
+  it("throws CatalogueUnavailableError when no client is configured", async () => {
+    mockedGetClient.mockReturnValue(null);
+    await expect(listActivities()).rejects.toBeInstanceOf(
+      CatalogueUnavailableError,
+    );
+  });
+
+  it("returns only tagged activities, in the docs' order", async () => {
+    mockActivitiesRows([
+      { activities: ["driving", "everyday"] },
+      { activities: ["driving"] },
+      { activities: [] },
+      { activities: ["sport"] },
+    ]);
+    expect(await listActivities()).toEqual([
+      { slug: "driving", label: "Driving" },
+      { slug: "sport", label: "Sport" },
+      { slug: "everyday", label: "Everyday" },
+    ]);
+  });
+
+  it("returns an empty list when nothing is tagged", async () => {
+    mockActivitiesRows([{ activities: [] }, { activities: null }]);
+    expect(await listActivities()).toEqual([]);
+  });
+
+  it("ignores unknown slugs instead of showing them", async () => {
+    mockActivitiesRows([{ activities: ["golf", "beach"] }]);
+    expect(await listActivities()).toEqual([
+      { slug: "beach", label: "Beach" },
+    ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Related products — S-7 cross-sell (F13, 1.x-2)
 // ---------------------------------------------------------------------------
 
@@ -378,6 +481,7 @@ function seedCatalogue(): ProductSummary[] {
   return rows.map((row) => ({
     ...row,
     description: `${row.name} sunglasses`,
+    activities: [],
     is_demo: true,
     primary_image: `/images/${row.slug}.webp`,
   }));

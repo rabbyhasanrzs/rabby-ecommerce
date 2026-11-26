@@ -37,6 +37,7 @@ function product(
     category_id: "c1",
     category_slug: "women",
     category_name: "Women",
+    activities: [],
     price_bdt: priceBdt,
     stock_total: stockTotal,
     is_demo: true,

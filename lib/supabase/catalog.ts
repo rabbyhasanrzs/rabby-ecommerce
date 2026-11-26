@@ -1,3 +1,4 @@
+import { ACTIVITIES, isActivitySlug, type ActivitySlug } from "@/lib/activities";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { z } from "zod";
 
@@ -7,7 +8,8 @@ import { z } from "zod";
  * Matches supabase/migrations/0001_s1_catalogue.sql exactly:
  *   categories (id, slug, name, sort_order, is_active)
  *   products (id, slug, name, description, category_id, price_bdt,
- *     stock_total, status, is_demo, created_at, updated_at)
+ *     stock_total, status, is_demo, created_at, updated_at,
+ *     activities text[] — S-7 Shop by Activity, migration 0015)
  *   product_variants (id, product_id, colour, price_bdt NULL,
  *     stock_quantity NULL, sort_order)
  *   product_images (id, product_id, storage_path, alt_text,
@@ -54,6 +56,11 @@ export type ListingSort = z.infer<typeof listingSortSchema>;
 export const listingParamsSchema = z.object({
   search: z.string().trim().max(100).optional().default(""),
   category: slugSchema.optional().default(""),
+  // S-7 Shop by Activity (1.x-6, F17): same shape as `category` — a
+  // slug, validated the same way. An unknown-but-valid slug filters
+  // to zero products, exactly like an unknown category; an invalid
+  // slug falls back to the safe defaults with everything else.
+  activity: slugSchema.optional().default(""),
   sort: listingSortSchema.optional().default("featured"),
   priceMin: z.coerce.number().int().min(0).max(1_000_000).optional(),
   priceMax: z.coerce.number().int().min(0).max(1_000_000).optional(),
@@ -91,6 +98,17 @@ export interface Category {
   sort_order: number;
 }
 
+/**
+ * One Shop by Activity tile (S-7, 1.x-6, F17) — slug + plain-words
+ * label, in the docs' order (driving, sport, beach, everyday).
+ * listActivities() returns only activities with ≥1 tagged active
+ * product, so a tile always leads to a listing with products.
+ */
+export interface Activity {
+  slug: ActivitySlug;
+  label: string;
+}
+
 export interface ProductSummary {
   id: string;
   slug: string;
@@ -99,6 +117,8 @@ export interface ProductSummary {
   category_id: string | null;
   category_slug: string | null;
   category_name: string | null;
+  /** Activity slugs the owner tagged in admin (S-7, 1.x-6); [] when untagged. */
+  activities: string[];
   price_bdt: number;
   stock_total: number;
   is_demo: boolean;
@@ -153,6 +173,9 @@ export function applyListingFilters(
   const needle = params.search.trim().toLowerCase();
   return products.filter((p) => {
     if (params.category && p.category_slug !== params.category) {
+      return false;
+    }
+    if (params.activity && !(p.activities ?? []).includes(params.activity)) {
       return false;
     }
     if (needle) {
@@ -269,7 +292,7 @@ export class CatalogueUnavailableError extends Error {
 }
 
 const productColumns =
-  "id,slug,name,description,category_id,price_bdt,stock_total,is_demo,created_at";
+  "id,slug,name,description,category_id,activities,price_bdt,stock_total,is_demo,created_at";
 
 interface ProductRow {
   id: string;
@@ -277,6 +300,7 @@ interface ProductRow {
   name: string;
   description: string | null;
   category_id: string | null;
+  activities: string[] | null;
   price_bdt: number;
   stock_total: number;
   is_demo: boolean;
@@ -293,6 +317,9 @@ function toProductSummary(row: ProductRow): ProductSummary {
     category_id: row.category_id,
     category_slug: row.categories?.slug ?? null,
     category_name: row.categories?.name ?? null,
+    // Defensive: rows written before migration 0015 have no
+    // activities value; treat a missing value as untagged.
+    activities: row.activities ?? [],
     price_bdt: row.price_bdt,
     stock_total: row.stock_total,
     is_demo: row.is_demo,
@@ -336,6 +363,36 @@ export async function listCategories(): Promise<Category[]> {
   return (data as Category[]).filter((category) =>
     withProducts.has(category.id),
   );
+}
+
+/**
+ * Activities with at least one tagged active product (S-7, 1.x-6,
+ * F17) — the exact mirror of listCategories() and the IA's
+ * empty-grouping rule: an activity with no tagged products is never
+ * shown, anywhere. Returned in the docs' order (driving, sport,
+ * beach, everyday), never in database order, so the homepage tiles
+ * are stable. Unknown slugs are ignored (defensive — the 0015 CHECK
+ * forbids them, but a row written before the migration cannot be
+ * trusted to be clean).
+ */
+export async function listActivities(): Promise<Activity[]> {
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    throw new CatalogueUnavailableError();
+  }
+  const { data, error } = await supabase
+    .from("products")
+    .select("activities")
+    .eq("status", "active");
+  if (error || !data) {
+    throw new CatalogueUnavailableError();
+  }
+  const tagged = new Set(
+    (data as { activities: string[] | null }[])
+      .flatMap((row) => row.activities ?? [])
+      .filter((slug): slug is ActivitySlug => isActivitySlug(slug)),
+  );
+  return ACTIVITIES.filter((activity) => tagged.has(activity.slug));
 }
 
 export async function listProducts(

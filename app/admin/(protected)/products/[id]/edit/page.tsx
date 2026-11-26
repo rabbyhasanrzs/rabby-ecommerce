@@ -38,6 +38,7 @@ async function AdminProductEditPageContent({
             id: product.id,
             name: product.name,
             categoryId: product.category_id,
+            activities: product.activities ?? [],
             priceBdt: product.price_bdt,
             stockTotal: product.stock_total,
             status: product.status === "inactive" ? "inactive" : "active",

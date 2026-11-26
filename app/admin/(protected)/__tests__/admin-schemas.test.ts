@@ -27,6 +27,34 @@ describe("productSaveSchema bounds", () => {
     expect(productSaveSchema.safeParse(validProduct()).success).toBe(true);
   });
 
+  it("accepts the four approved activities (S-7 Shop by Activity)", () => {
+    const parsed = productSaveSchema.safeParse({
+      ...validProduct(),
+      activities: ["driving", "everyday"],
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.activities).toEqual(["driving", "everyday"]);
+    }
+  });
+
+  it("defaults activities to [] when omitted (untagged product)", () => {
+    const parsed = productSaveSchema.safeParse(validProduct());
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.activities).toEqual([]);
+    }
+  });
+
+  it("rejects an unknown activity slug", () => {
+    expect(
+      productSaveSchema.safeParse({
+        ...validProduct(),
+        activities: ["golf"],
+      }).success,
+    ).toBe(false);
+  });
+
   it("accepts a same-origin /images/ photo path", () => {
     expect(
       productSaveSchema.safeParse({

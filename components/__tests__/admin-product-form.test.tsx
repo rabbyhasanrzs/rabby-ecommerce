@@ -80,6 +80,7 @@ describe("ProductForm", () => {
           id: "22222222-2222-2222-2222-222222222222",
           name: "Test Shades",
           categoryId: null,
+          activities: [],
           priceBdt: 950,
           stockTotal: 12,
           status: "active",
@@ -127,6 +128,7 @@ describe("ProductForm", () => {
           id: "22222222-2222-2222-2222-222222222222",
           name: "Test Shades",
           categoryId: null,
+          activities: [],
           priceBdt: 950,
           stockTotal: 12,
           status: "active",
@@ -156,6 +158,7 @@ describe("ProductForm", () => {
           id: "22222222-2222-2222-2222-222222222222",
           name: "Test Shades",
           categoryId: null,
+          activities: [],
           priceBdt: 950,
           stockTotal: 12,
           status: "active",
@@ -181,5 +184,76 @@ describe("ProductForm", () => {
       }),
     );
     expect(pushMock).toHaveBeenCalledWith("/admin/products");
+  });
+
+  it("shows the four activity checkboxes, all unticked on a new product (S-7 Shop by Activity)", () => {
+    renderAddForm();
+
+    for (const label of ["Driving", "Sport", "Beach", "Everyday"]) {
+      const checkbox = screen.getByRole("checkbox", { name: label });
+      expect(checkbox).not.toBeChecked();
+    }
+  });
+
+  it("pre-ticks the tagged activities in edit mode", () => {
+    render(
+      <ProductForm
+        categories={CATEGORIES}
+        initial={{
+          id: "22222222-2222-2222-2222-222222222222",
+          name: "Test Shades",
+          categoryId: null,
+          activities: ["driving", "everyday"],
+          priceBdt: 950,
+          stockTotal: 12,
+          status: "active",
+          description: "",
+          colour: "Black",
+          imageUrl: "https://example.supabase.co/photo.webp",
+        }}
+        mode="edit"
+      />,
+    );
+
+    expect(screen.getByRole("checkbox", { name: "Driving" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Everyday" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Sport" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Beach" })).not.toBeChecked();
+  });
+
+  it("sends the ticked activities in the save body", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({ ok: true, id: "22222222-2222-2222-2222-222222222222" }),
+    });
+    render(
+      <ProductForm
+        categories={CATEGORIES}
+        initial={{
+          id: "22222222-2222-2222-2222-222222222222",
+          name: "Test Shades",
+          categoryId: null,
+          activities: [],
+          priceBdt: 950,
+          stockTotal: 12,
+          status: "active",
+          description: "",
+          colour: "Black",
+          imageUrl: "https://example.supabase.co/photo.webp",
+        }}
+        mode="edit"
+      />,
+    );
+    fireEvent.click(screen.getByRole("checkbox", { name: "Driving" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Beach" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+    const body = JSON.parse(
+      (fetchMock.mock.calls[0] as [string, { body: string }])[1].body,
+    ) as { activities: string[] };
+    expect(body.activities).toEqual(["driving", "beach"]);
   });
 });

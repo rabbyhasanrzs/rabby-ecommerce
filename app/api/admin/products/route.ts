@@ -113,6 +113,7 @@ export async function POST(request: Request) {
       name: input.name,
       description: input.description || null,
       category_id: input.categoryId,
+      activities: input.activities,
       price_bdt: input.priceBdt,
       stock_total: input.stockTotal,
       status: input.status,
