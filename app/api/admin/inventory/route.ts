@@ -2,6 +2,7 @@ import {
   adminClient,
   inventorySaveSchema,
 } from "@/app/admin/(protected)/admin-data";
+import { sendBackInStockAlertsForProduct } from "@/lib/order-email";
 import {
   checkAdminAccess,
   getSupabaseAdminEnv,
@@ -70,6 +71,30 @@ export async function POST(request: Request) {
     );
   }
 
+  // S-7 back-in-stock: the trigger needs the OLD stock — read the
+  // row first. A 0 -> >0 crossing on an active product is the
+  // restock event; anything else sends nothing.
+  const { data: current, error: readError } = await supabase
+    .from("products")
+    .select("id,slug,name,stock_total,status")
+    .eq("id", parsed.data.productId)
+    .maybeSingle();
+  if (readError) {
+    console.error("Inventory save failed", {
+      code: readError.code,
+      message: readError.message,
+      details: readError.details,
+    });
+    return Response.json({ ok: false, error: GENERIC_ERROR }, { status: 500 });
+  }
+  if (!current) {
+    return Response.json(
+      { ok: false, error: "Product not found." },
+      { status: 404 },
+    );
+  }
+  const oldStock = (current as { stock_total: number }).stock_total;
+
   const { data, error } = await supabase
     .from("products")
     .update({ stock_total: parsed.data.stockTotal })
@@ -91,6 +116,29 @@ export async function POST(request: Request) {
       { ok: false, error: "Product not found." },
       { status: 404 },
     );
+  }
+
+  // Back-in-stock trigger: a 0 -> >0 crossing on an ACTIVE product
+  // alerts the pending subscribers. Best-effort and never throws —
+  // the save already succeeded, and a failed send must never turn
+  // it into a failed save. A save that does not cross zero, and a
+  // restock of a deactivated product, send nothing (the rows stay
+  // pending). A cancellation restoring stock does NOT trigger —
+  // known gap in v1 (see the S-7 back-in-stock investigation note).
+  if (
+    oldStock <= 0 &&
+    parsed.data.stockTotal > 0 &&
+    (current as { status: string }).status === "active"
+  ) {
+    try {
+      await sendBackInStockAlertsForProduct({
+        productId: parsed.data.productId,
+        productName: (current as { name: string }).name,
+        productSlug: (current as { slug: string }).slug,
+      });
+    } catch {
+      // Best-effort — the save already succeeded.
+    }
   }
   return Response.json({ ok: true, id: parsed.data.productId });
 }

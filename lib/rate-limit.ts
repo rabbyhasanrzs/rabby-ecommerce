@@ -62,6 +62,14 @@ export const REVIEW_RATE_LIMIT = 10;
 export const REVIEW_RATE_WINDOW_MS = 10 * 60 * 1000;
 
 /**
+ * Back-in-stock subscribe: 10 attempts per 10 minutes per IP (S-7).
+ * Same budget as review / coupon / checkout — a public write that
+ * takes an email. Checked AFTER the schema parse.
+ */
+export const STOCK_ALERT_RATE_LIMIT = 10;
+export const STOCK_ALERT_RATE_WINDOW_MS = 10 * 60 * 1000;
+
+/**
  * Admin sign-in / MFA verify: 10 attempts per 10 minutes per IP
  * (S-6, T-61, S6-05). Server actions have no Request object, so the
  * caller builds the key from next/headers (see login-actions.ts).

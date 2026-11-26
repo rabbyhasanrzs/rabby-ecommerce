@@ -5,6 +5,7 @@ import { ChevronLeftIcon, ChevronRightIcon } from "@/components/icons";
 import MeasurementDiagram from "@/components/measurement-diagram";
 import ProductImage from "@/components/product-image";
 import { StarsDisplay } from "@/components/star-rating";
+import StockAlertForm from "@/components/stock-alert-form";
 import WishlistButton from "@/components/wishlist-button";
 import { useBag } from "@/lib/bag-context";
 import { formatPriceBdt, stockLabel } from "@/lib/format";
@@ -41,7 +42,8 @@ import { useState } from "react";
  *
  * Add to Bag (S-2): adds one unit of the selected colour variant and
  * opens the mini-cart drawer. Out-of-stock products show
- * "Out of Stock" and no purchase control.
+ * "Out of Stock" and no purchase control — instead they get the
+ * back-in-stock alert form (S-7): one email field + "Notify me".
  */
 
 const MEASUREMENT_LABELS = [
@@ -306,10 +308,13 @@ export default function ProductDetailClient({
 
         {outOfStock ? (
           <>
-            <p className="mt-8 rounded-md border border-border bg-background-subtle px-4 py-3 text-base text-text-secondary">
-              This product is currently out of stock. Bag and checkout arrive
-              in S-2.
-            </p>
+            {/* S-7 back-in-stock: the alert form replaces the old
+                out-of-stock box — its copy claimed bag and checkout
+                were still coming, which has been stale since S-2. */}
+            <StockAlertForm
+              productSlug={product.slug}
+              productName={product.name}
+            />
             {/* S-7: an out-of-stock product can still be saved — the
                 wishlist page keeps it visible with "Out of Stock". */}
             <WishlistButton

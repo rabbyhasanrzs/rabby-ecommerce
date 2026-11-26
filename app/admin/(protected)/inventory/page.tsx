@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import {
   adminClient,
   adminListProducts,
+  adminListStockAlertSubscriptions,
 } from "@/app/admin/(protected)/admin-data";
 import InventoryRow from "@/components/admin/inventory-row";
 import { connection } from "next/server";
@@ -16,6 +17,22 @@ import { connection } from "next/server";
 async function AdminInventoryPageContent() {
   await connection();
   const products = await adminListProducts();
+  // S-7 back-in-stock: pending subscribers per product. Best-effort
+  // — when migration 0013 has not run yet (the code deploys before
+  // the owner runs the SQL), the list call throws and the counts
+  // simply stay empty instead of breaking the page.
+  const waitingByProduct = new Map<string, number>();
+  try {
+    const pending = await adminListStockAlertSubscriptions(null, "pending");
+    for (const row of pending) {
+      waitingByProduct.set(
+        row.product_id,
+        (waitingByProduct.get(row.product_id) ?? 0) + 1,
+      );
+    }
+  } catch {
+    // No counts — see above.
+  }
   // First variant colour per product (stock itself is product-level).
   const supabase = await adminClient();
   const { data: variants } = await supabase
@@ -61,6 +78,9 @@ async function AdminInventoryPageContent() {
                   Stock
                 </th>
                 <th scope="col" className="px-4 py-3 font-semibold">
+                  Waiting
+                </th>
+                <th scope="col" className="px-4 py-3 font-semibold">
                   <span className="sr-only">Save</span>
                 </th>
               </tr>
@@ -73,6 +93,7 @@ async function AdminInventoryPageContent() {
                   productName={product.name}
                   colour={colourByProduct.get(product.id) ?? null}
                   stockTotal={product.stock_total}
+                  waitingCount={waitingByProduct.get(product.id) ?? 0}
                 />
               ))}
             </tbody>
