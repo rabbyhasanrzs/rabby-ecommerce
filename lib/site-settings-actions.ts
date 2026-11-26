@@ -55,6 +55,7 @@ export async function updateSiteSettingsAction(
       payment_nagad_enabled: settings.paymentNagadEnabled,
       payment_rocket_enabled: settings.paymentRocketEnabled,
       payment_card_enabled: settings.paymentCardEnabled,
+      payment_online_enabled: settings.paymentOnlineEnabled,
       website_notice: settings.websiteNotice,
       support_whatsapp: settings.supportWhatsapp,
       support_messenger: settings.supportMessenger,

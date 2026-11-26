@@ -37,6 +37,12 @@ import { useEffect, useRef, useState } from "react";
  * `customer` in the checkout body (same shape as the S-2 fix).
  * On any failure the entered details are kept (controlled inputs).
  *
+ * S-7: "Pay Online" (SSLCommerz) shows a note only. On success the
+ * API returns a gatewayUrl and the customer is sent to the secure
+ * payment page (a full-page navigation, not router.push — the
+ * gateway is a different site). The confirmation email waits until
+ * the payment validates.
+ *
  * S-4: the form fetches the public shop settings (GET /api/settings)
  * on mount and uses them for the totals + delivery display. While
  * loading, or if the fetch fails, the demo-config values are used —
@@ -125,10 +131,19 @@ function isPaymentMethodEnabled(
       return settings.paymentRocketEnabled;
     case "card":
       return settings.paymentCardEnabled;
+    case "online":
+      return settings.paymentOnlineEnabled;
+    default:
+      return true;
   }
 }
 
-const PAYMENT_GROUP_ORDER = ["Cash on Delivery", "Mobile Banking", "Card"];
+const PAYMENT_GROUP_ORDER = [
+  "Cash on Delivery",
+  "Mobile Banking",
+  "Card",
+  "Online Payment",
+];
 
 const inputClassName =
   "min-h-11 w-full rounded-md border border-border bg-surface px-3 py-2 text-base text-text";
@@ -461,6 +476,7 @@ export default function CheckoutForm() {
         reference?: string;
         error?: string;
         code?: string;
+        gatewayUrl?: string;
         issues?: { message: string }[];
       } = await checkoutResponse.json();
       if (!checkoutResponse.ok || !checkoutData.ok || !checkoutData.reference) {
@@ -490,6 +506,13 @@ export default function CheckoutForm() {
 
       clearBag();
       sessionStorage.setItem("rabby-order-phone", data.phone);
+      if (checkoutData.gatewayUrl) {
+        // S-7: online payment — the order is created and pending;
+        // the customer pays on the gateway page (a different site,
+        // so a full-page navigation, not router.push).
+        window.location.assign(checkoutData.gatewayUrl);
+        return;
+      }
       router.push(`/order/confirmation?ref=${checkoutData.reference}`);
     } catch {
       setBanner(

@@ -7,10 +7,11 @@ import { useState } from "react";
  * Help / FAQ (S-5, T-50).
  *
  * Every answer states only approved facts (kickoff pack §3):
- * delivery + tax are DEMO config, payment is demo-safe (no real
- * gateway), returns are the 7-day Proposed Default, cancel is
- * before Shipped with stock restored, tracking is reference +
- * phone. Nothing else is promised.
+ * delivery + tax are DEMO config, the manual payment methods are
+ * demo-safe (no money moves through the site), Pay Online is the
+ * real gateway (SSLCommerz), returns are the 7-day Proposed
+ * Default, cancel is before Shipped with stock restored, tracking
+ * is reference + phone. Nothing else is promised.
  *
  * Behaviour per Phase 06A §2.9 / §3 S-7: category chips filter the
  * questions; accordions are real buttons with aria-expanded, one
@@ -50,7 +51,13 @@ export const FAQ_ITEMS: FaqItem[] = [
     category: "Payment",
     question: "Which payment methods can I use?",
     answer:
-      "Cash on Delivery (COD), bKash, Nagad, Rocket, Debit/Credit Card, and Online Payment Gateway. This is the demo configuration — no real payment gateway exists yet.",
+      "Cash on Delivery (COD), bKash, Nagad, Rocket, Debit/Credit Card, and Pay Online. Pay Online takes you to a secure payment page (SSLCommerz) where you can pay with your card, bKash, Nagad, Rocket, or bank account — your card details are entered on the payment page, never on this site.",
+  },
+  {
+    category: "Payment",
+    question: "How does Pay Online work?",
+    answer:
+      "Choose Pay Online at checkout and place your order. You will be taken to a secure payment page (SSLCommerz) to pay with your card, bKash, Nagad, Rocket, or bank account. Once the payment is confirmed, your order is marked paid and you get a confirmation email. If the payment doesn't go through, your order stays saved — place a fresh order or contact us for help.",
   },
   {
     category: "Payment",
@@ -62,7 +69,7 @@ export const FAQ_ITEMS: FaqItem[] = [
     category: "Payment",
     question: "Is card payment real?",
     answer:
-      "No. Card details are never collected on this site. A card payment is confirmed after you place the order — no money moves in this demo.",
+      "The Debit / Credit Card option at checkout is a manual confirmation — card details are never collected on this site, and a card payment is confirmed after you place the order, so no money moves in this demo. To pay by card online right away, choose Pay Online instead.",
   },
   {
     category: "Payment",

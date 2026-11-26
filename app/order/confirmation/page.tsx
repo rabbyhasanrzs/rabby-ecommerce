@@ -21,6 +21,10 @@ import { Suspense, useCallback, useEffect, useRef, useState } from "react";
  * (sessionStorage "rabby-order-phone"); if no phone was saved, asks for
  * it first. Shows the reference large with a Copy button, the items,
  * totals, delivery estimate, payment method, and a Track Your Order link.
+ *
+ * S-7: the gateway return handlers add ?payment=confirming / failed /
+ * cancelled when the payment outcome could not be shown as paid —
+ * the notice below the heading explains what happened in plain words.
  */
 
 const NOT_FOUND_MESSAGE =
@@ -53,6 +57,9 @@ async function lookupOrder(
 function ConfirmationContent() {
   const searchParams = useSearchParams();
   const reference = searchParams.get("ref") ?? "";
+  // S-7: set by the gateway return handlers when the payment did
+  // not show as paid (see the notices below the heading).
+  const paymentNotice = searchParams.get("payment") ?? "";
 
   const [phone, setPhone] = useState<string | null>(null);
   const [phoneInput, setPhoneInput] = useState("");
@@ -146,8 +153,41 @@ function ConfirmationContent() {
   return (
     <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-16 md:px-8">
       <h1 className="font-display text-3xl font-bold tracking-tight text-text md:text-4xl">
-        Thank you — your order is placed.
+        {paymentNotice === "failed" || paymentNotice === "cancelled"
+          ? "Your order is saved."
+          : "Thank you — your order is placed."}
       </h1>
+
+      {paymentNotice === "confirming" ? (
+        <p
+          role="status"
+          className="mt-6 max-w-2xl rounded-md border border-border bg-surface px-4 py-3 text-text"
+        >
+          We&rsquo;re still confirming your payment. The payment page
+          closed before we could verify it — check this page again in
+          a few minutes. Your order is saved.
+        </p>
+      ) : null}
+      {paymentNotice === "failed" ? (
+        <p
+          role="alert"
+          className="mt-6 max-w-2xl rounded-md border border-error bg-surface px-4 py-3 text-text"
+        >
+          Your online payment didn&rsquo;t go through. Your order is
+          still saved — please place a fresh order, or contact us for
+          help.
+        </p>
+      ) : null}
+      {paymentNotice === "cancelled" ? (
+        <p
+          role="alert"
+          className="mt-6 max-w-2xl rounded-md border border-error bg-surface px-4 py-3 text-text"
+        >
+          You cancelled the online payment. Your order is still saved
+          — place a fresh order when you&rsquo;re ready, or contact us
+          for help.
+        </p>
+      ) : null}
 
       {loading ? (
         <p className="mt-6 text-lg text-text-secondary">

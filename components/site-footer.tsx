@@ -28,8 +28,9 @@ const ABOUT_LINKS = [
 /**
  * Site footer — Final Approved Design Blueprint, Sections 6.2 and 7.1.
  * Groups: Shop / Help / About / Contact. Payment line is text only
- * (no gateway chosen yet). Contact details and social links are demo
- * placeholders until the owner provides verified details (S-5).
+ * (S-7: the Pay Online gateway is SSLCommerz). Contact details and
+ * social links are demo placeholders until the owner provides
+ * verified details (S-5).
  */
 export default function SiteFooter() {
   return (
@@ -105,7 +106,7 @@ export default function SiteFooter() {
         <div className="mx-auto flex w-full max-w-7xl flex-col gap-3 px-4 py-6 text-sm text-text-secondary md:px-8">
           <p>
             Payment methods: Cash on Delivery · bKash · Nagad · Rocket ·
-            Debit/Credit Card (coming soon)
+            Online Payment (Cards, bKash, Nagad, Rocket &amp; more)
           </p>
           <p>Follow us: Facebook · Instagram · X (links coming soon)</p>
           <p>

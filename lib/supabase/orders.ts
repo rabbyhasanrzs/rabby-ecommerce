@@ -600,7 +600,128 @@ export async function lookupOrder(
   };
 }
 
-/** Cancel an order by reference + phone. Stock is restored by the function. */
+// ---------------------------------------------------------------------------
+// SSLCommerz gateway record (S-7 — migration 0016)
+// ---------------------------------------------------------------------------
+
+export interface GatewayOrderContact {
+  totalBdt: number;
+  paymentStatus: string;
+  paymentMethod: string;
+  customerPhone: string;
+  customerEmail: string;
+}
+
+export interface GatewayRecordInput {
+  sessionKey?: string | null;
+  valId?: string | null;
+  bankTranId?: string | null;
+  cardBrand?: string | null;
+  storeAmountBdt?: number | null;
+  riskLevel?: number | null;
+}
+
+/**
+ * Read what the IPN / return handlers need to settle one gateway
+ * order: the total (to compare against the Validation API amount),
+ * the payment state + method, and the customer contact (to send the
+ * confirmation email — the guest lookup cannot serve it, it needs
+ * the phone, and the IPN has none). Via get_gateway_order
+ * (migration 0016), secret-gated like markOrderPaymentStatus: null
+ * when the secret is missing / mismatched OR the order does not
+ * exist — no oracle either way. The caller passes the server env
+ * secret (PAYMENT_WEBHOOK_SECRET); the secret is never a client
+ * value.
+ */
+export async function getGatewayOrder(
+  reference: string,
+  secret: string,
+): Promise<GatewayOrderContact | null> {
+  const supabase = requireClient();
+
+  const { data, error } = await supabase.rpc("get_gateway_order", {
+    p_reference: reference,
+    p_secret: secret,
+  });
+  if (error) {
+    throw new Error("Order lookup failed. Please try again.");
+  }
+  if (!data) {
+    return null;
+  }
+  const row = data as {
+    total_bdt?: unknown;
+    payment_status?: unknown;
+    payment_method?: unknown;
+    customer_phone?: unknown;
+    customer_email?: unknown;
+  };
+  if (
+    typeof row.total_bdt !== "number" ||
+    typeof row.payment_status !== "string" ||
+    typeof row.payment_method !== "string" ||
+    typeof row.customer_phone !== "string" ||
+    typeof row.customer_email !== "string"
+  ) {
+    throw new Error("Order lookup failed. Please try again.");
+  }
+  return {
+    totalBdt: row.total_bdt,
+    paymentStatus: row.payment_status,
+    paymentMethod: row.payment_method,
+    customerPhone: row.customer_phone,
+    customerEmail: row.customer_email,
+  };
+}
+
+/**
+ * Store the SSLCommerz record on the latest payments row for one
+ * order, via record_gateway_payment (migration 0016). Only
+ * non-null fields overwrite a column, so the session key stored at
+ * checkout survives the later settle-time call. Secret-gated and
+ * pending-only, like markOrderPaymentStatus: an already-settled
+ * order returns invalid_transition (a replayed IPN is a no-op),
+ * a bad secret returns unauthorized.
+ */
+export async function recordGatewayPayment(
+  reference: string,
+  record: GatewayRecordInput,
+  secret: string,
+): Promise<{
+  ok: boolean;
+  error?: "not_found" | "invalid_transition" | "unauthorized";
+}> {
+  const supabase = requireClient();
+
+  const { data, error } = await supabase.rpc("record_gateway_payment", {
+    p_reference: reference,
+    p_secret: secret,
+    p_session_key: record.sessionKey ?? null,
+    p_val_id: record.valId ?? null,
+    p_bank_tran_id: record.bankTranId ?? null,
+    p_card_brand: record.cardBrand ?? null,
+    p_store_amount_bdt: record.storeAmountBdt ?? null,
+    p_risk_level: record.riskLevel ?? null,
+  });
+  if (error) {
+    throw new Error("Payment record update failed. Please try again.");
+  }
+
+  const result = (data ?? {}) as { ok?: unknown; error?: unknown };
+  if (result.ok === true) {
+    return { ok: true };
+  }
+  if (result.error === "not_found") {
+    return { ok: false, error: "not_found" };
+  }
+  if (result.error === "invalid_transition") {
+    return { ok: false, error: "invalid_transition" };
+  }
+  if (result.error === "unauthorized") {
+    return { ok: false, error: "unauthorized" };
+  }
+  throw new Error("Payment record update failed. Please try again.");
+}
 export async function cancelOrder(
   reference: string,
   phone: string,
