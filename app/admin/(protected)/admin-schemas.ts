@@ -104,4 +104,6 @@ export const orderStatusUpdateSchema = z.object({
 
 export const paymentStatusUpdateSchema = z.object({
   status: z.enum(["paid", "failed"]),
+  /** On Failed this is the note the customer sees in the payment-failed email; otherwise ignored. */
+  note: z.string().trim().max(500).nullable().optional(),
 });

@@ -5,13 +5,16 @@ import {
   buildBackInStockEmail,
   buildOrderConfirmationEmail,
   buildOrderStatusEmail,
+  buildPaymentFailedEmail,
   isOrderStatusEmailTrigger,
   ORDER_STATUS_EMAIL_TRIGGERS,
   sendBackInStockAlert,
   sendBackInStockAlertsForProduct,
   sendOrderConfirmationEmail,
   sendOrderStatusEmail,
+  sendPaymentFailedEmail,
   type OrderStatusEmailOrder,
+  type PaymentFailedEmailOrder,
 } from "@/lib/order-email";
 import type { AdminOrderDetail } from "@/app/admin/(protected)/admin-data";
 import type { OrderDetail } from "@/lib/supabase/orders";
@@ -108,6 +111,12 @@ const STATUS_ORDER: OrderStatusEmailOrder = {
     },
   ],
   totalBdt: 1583,
+};
+
+const PAYMENT_FAILED_ORDER: PaymentFailedEmailOrder = {
+  ...STATUS_ORDER,
+  paymentMethod: "bkash",
+  paymentReference: "TRX12345678",
 };
 
 const ADMIN_ORDER_FIXTURE: AdminOrderDetail = {
@@ -903,5 +912,278 @@ describe("sendBackInStockAlertsForProduct", () => {
     const result = await trigger();
     expect(result).toEqual({ sent: 0, failed: 0, skipped: 0 });
     expect(sendMailMock).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Payment-failed email (S-7)
+// ---------------------------------------------------------------------------
+
+describe("buildPaymentFailedEmail", () => {
+  it("has the approved subject, meaning line, items, total, track and contact links", () => {
+    const email = buildPaymentFailedEmail(
+      PAYMENT_FAILED_ORDER,
+      CUSTOMER_EMAIL,
+      SENDER,
+    );
+    expect(email.from).toBe(`RabbY <${SENDER}>`);
+    expect(email.to).toBe(CUSTOMER_EMAIL);
+    expect(email.subject).toBe(
+      "Your RabbY order RB-2026-123456 — we couldn't verify your payment",
+    );
+    expect(email.text).toContain(
+      "We checked the payment for your order and could not verify it. Your order has not been cancelled — only the payment needs sorting out.",
+    );
+    // The apostrophe is HTML-escaped in the html body.
+    expect(email.html).toContain("couldn&#39;t verify your payment.");
+    expect(email.html).toContain("has not been cancelled");
+    for (const body of [email.text, email.html]) {
+      expect(body).toContain("RB-2026-123456");
+      expect(body).toContain("SAMPLE Aviator A");
+      expect(body).toContain("Gold");
+      expect(body).toContain("৳1,450");
+      expect(body).toContain("৳1,583");
+      expect(body).toContain(
+        "https://rabby-ecommerce-uhrm.vercel.app/orders?ref=RB-2026-123456",
+      );
+      expect(body).toContain("https://rabby-ecommerce-uhrm.vercel.app/contact");
+    }
+    // No re-pay promise (no re-pay flow exists) and no WhatsApp
+    // number (none has been provided).
+    for (const body of [email.text, email.html]) {
+      expect(body).not.toMatch(/pay again/i);
+      expect(body).not.toContain("WhatsApp");
+    }
+  });
+
+  it("shows the Transaction ID for mobile banking, never the sender number", () => {
+    const email = buildPaymentFailedEmail(
+      PAYMENT_FAILED_ORDER,
+      CUSTOMER_EMAIL,
+      SENDER,
+    );
+    expect(email.text).toContain("Transaction ID: TRX12345678");
+    expect(email.html).toContain("Transaction ID: TRX12345678");
+    // The builder takes no sender number at all, so none can leak.
+    expect(email.text).not.toContain("01799999999");
+    expect(email.html).not.toContain("01799999999");
+  });
+
+  it("shows no Transaction ID line for COD or for mobile banking without one", () => {
+    const cod = buildPaymentFailedEmail(
+      { ...STATUS_ORDER, paymentMethod: "cod", paymentReference: null },
+      CUSTOMER_EMAIL,
+      SENDER,
+    );
+    expect(cod.text).not.toContain("Transaction ID");
+    expect(cod.html).not.toContain("Transaction ID");
+
+    const noReference = buildPaymentFailedEmail(
+      { ...STATUS_ORDER, paymentMethod: "bkash", paymentReference: null },
+      CUSTOMER_EMAIL,
+      SENDER,
+    );
+    expect(noReference.text).not.toContain("Transaction ID");
+    expect(noReference.html).not.toContain("Transaction ID");
+  });
+
+  it("renders the admin note verbatim, and nothing when there is no note", () => {
+    const withNote = buildPaymentFailedEmail(
+      PAYMENT_FAILED_ORDER,
+      CUSTOMER_EMAIL,
+      SENDER,
+      "Transaction ID not found",
+    );
+    expect(withNote.text).toContain("Note: Transaction ID not found");
+    expect(withNote.html).toContain("Note: Transaction ID not found");
+
+    const withoutNote = buildPaymentFailedEmail(
+      PAYMENT_FAILED_ORDER,
+      CUSTOMER_EMAIL,
+      SENDER,
+    );
+    expect(withoutNote.text).not.toContain("Note:");
+    expect(withoutNote.html).not.toContain("Note:");
+  });
+
+  it("escapes HTML in item names and the admin note", () => {
+    const evilOrder: PaymentFailedEmailOrder = {
+      ...PAYMENT_FAILED_ORDER,
+      items: [
+        {
+          productName: "<script>alert(1)</script>",
+          variantColour: null,
+          quantity: 1,
+          lineTotalBdt: 100,
+        },
+      ],
+    };
+    const email = buildPaymentFailedEmail(
+      evilOrder,
+      CUSTOMER_EMAIL,
+      SENDER,
+      "<b>evil note</b>",
+    );
+    expect(email.html).not.toContain("<script>alert(1)</script>");
+    expect(email.html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
+    expect(email.html).not.toContain("<b>evil note</b>");
+    expect(email.html).toContain("&lt;b&gt;evil note&lt;/b&gt;");
+  });
+});
+
+describe("sendPaymentFailedEmail", () => {
+  function withGmailConfigured() {
+    vi.stubEnv("GMAIL_USER", SENDER);
+    vi.stubEnv("GMAIL_APP_PASSWORD", "mock-app-password");
+  }
+
+  it("sends via Gmail SMTP and logs the sent attempt as payment_failed", async () => {
+    withGmailConfigured();
+    const result = await sendPaymentFailedEmail({
+      reference: "RB-2026-123456",
+    });
+    expect(result).toEqual({ status: "sent" });
+    expect(adminGetOrderMock).toHaveBeenCalledWith("RB-2026-123456");
+    expect(sendMailMock).toHaveBeenCalledTimes(1);
+    const sent = sendMailMock.mock.calls[0][0];
+    expect(sent.from).toBe(`RabbY <${SENDER}>`);
+    expect(sent.to).toBe(CUSTOMER_EMAIL);
+    expect(sent.subject).toBe(
+      "Your RabbY order RB-2026-123456 — we couldn't verify your payment",
+    );
+    expect(logAttemptMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderReference: "RB-2026-123456",
+        type: "payment_failed",
+        status: "payment_failed",
+        recipient: CUSTOMER_EMAIL,
+        result: "sent",
+      }),
+    );
+  });
+
+  it("sends the admin note and the Transaction ID when the order has them", async () => {
+    withGmailConfigured();
+    adminGetOrderMock.mockResolvedValue({
+      ...ADMIN_ORDER_FIXTURE,
+      order: {
+        ...ADMIN_ORDER_FIXTURE.order,
+        payment_method: "bkash",
+        payment_reference: "TRX12345678",
+      },
+    });
+    const result = await sendPaymentFailedEmail({
+      reference: "RB-2026-123456",
+      note: "Transaction ID not found",
+    });
+    expect(result).toEqual({ status: "sent" });
+    const sent = sendMailMock.mock.calls[0][0];
+    expect(sent.text).toContain("Transaction ID: TRX12345678");
+    expect(sent.text).toContain("Note: Transaction ID not found");
+  });
+
+  it("skips silently when the env vars are missing (no fetch, no send)", async () => {
+    const result = await sendPaymentFailedEmail({
+      reference: "RB-2026-123456",
+    });
+    expect(result).toEqual({
+      status: "skipped",
+      reason: "email not configured",
+    });
+    expect(adminGetOrderMock).not.toHaveBeenCalled();
+    expect(sendMailMock).not.toHaveBeenCalled();
+    expect(logAttemptMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "payment_failed",
+        status: "payment_failed",
+        result: "skipped",
+        error: "email not configured",
+      }),
+    );
+  });
+
+  it("skips without sending when the order is already Cancelled", async () => {
+    withGmailConfigured();
+    adminGetOrderMock.mockResolvedValue({
+      ...ADMIN_ORDER_FIXTURE,
+      order: { ...ADMIN_ORDER_FIXTURE.order, status: "cancelled" },
+    });
+    const result = await sendPaymentFailedEmail({
+      reference: "RB-2026-123456",
+    });
+    expect(result).toEqual({
+      status: "skipped",
+      reason: "order cancelled",
+    });
+    expect(sendMailMock).not.toHaveBeenCalled();
+    expect(logAttemptMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "payment_failed",
+        status: "payment_failed",
+        result: "skipped",
+        error: "order cancelled",
+      }),
+    );
+  });
+
+  it("returns failed (never throws) when the order is not found", async () => {
+    withGmailConfigured();
+    adminGetOrderMock.mockResolvedValue(null);
+    const result = await sendPaymentFailedEmail({
+      reference: "RB-2026-000000",
+    });
+    expect(result).toEqual({ status: "failed", reason: "order not found" });
+    expect(sendMailMock).not.toHaveBeenCalled();
+    expect(logAttemptMock).toHaveBeenCalledWith(
+      expect.objectContaining({ result: "failed", error: "order not found" }),
+    );
+  });
+
+  it("returns failed (never throws) when the order has no customer email", async () => {
+    withGmailConfigured();
+    adminGetOrderMock.mockResolvedValue({
+      ...ADMIN_ORDER_FIXTURE,
+      order: { ...ADMIN_ORDER_FIXTURE.order, customer_email: null },
+    });
+    const result = await sendPaymentFailedEmail({
+      reference: "RB-2026-123456",
+    });
+    expect(result).toEqual({
+      status: "failed",
+      reason: "no customer email",
+    });
+    expect(sendMailMock).not.toHaveBeenCalled();
+  });
+
+  it("returns failed (never throws) when Gmail rejects the send", async () => {
+    withGmailConfigured();
+    sendMailMock.mockRejectedValue(new Error("Invalid credentials"));
+    const result = await sendPaymentFailedEmail({
+      reference: "RB-2026-123456",
+    });
+    expect(result).toEqual({ status: "failed", reason: "send failed" });
+    expect(logAttemptMock).toHaveBeenCalledWith(
+      expect.objectContaining({ result: "failed", error: "send failed" }),
+    );
+  });
+
+  it("returns failed (never throws) when the admin order fetch throws", async () => {
+    withGmailConfigured();
+    adminGetOrderMock.mockRejectedValue(new Error("Admin request failed"));
+    const result = await sendPaymentFailedEmail({
+      reference: "RB-2026-123456",
+    });
+    expect(result).toEqual({ status: "failed", reason: "send failed" });
+    expect(sendMailMock).not.toHaveBeenCalled();
+  });
+
+  it("still reports sent when the log write itself fails", async () => {
+    withGmailConfigured();
+    logAttemptMock.mockRejectedValue(new Error("log write failed"));
+    const result = await sendPaymentFailedEmail({
+      reference: "RB-2026-123456",
+    });
+    expect(result).toEqual({ status: "sent" });
+    expect(sendMailMock).toHaveBeenCalledTimes(1);
   });
 });

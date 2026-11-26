@@ -3,6 +3,7 @@ import {
   adminUpdatePaymentStatus,
   paymentStatusUpdateSchema,
 } from "@/app/admin/(protected)/admin-data";
+import { sendPaymentFailedEmail } from "@/lib/order-email";
 import {
   checkAdminAccess,
   getSupabaseAdminEnv,
@@ -105,6 +106,23 @@ export async function POST(
       { ok: false, error: "Something went wrong. Please try again." },
       { status: 500 },
     );
+  }
+  // Auto-send the payment-failed email (S-7). The marking is
+  // already committed; a failed or skipped send is logged in
+  // notification_log (migration 0014) and the admin still gets
+  // { ok: true } — the email must never fail the update.
+  // sendPaymentFailedEmail never throws by contract; the try/catch
+  // is a belt under the braces. Only a "failed" marking sends —
+  // a "paid" marking sends nothing.
+  if (parsed.data.status === "failed") {
+    try {
+      await sendPaymentFailedEmail({
+        reference,
+        note: parsed.data.note ?? null,
+      });
+    } catch {
+      // Never fail the payment update on an email error.
+    }
   }
   return Response.json({ ok: true, reference, status: parsed.data.status });
 }

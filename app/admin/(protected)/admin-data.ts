@@ -282,7 +282,7 @@ export async function adminUpdateOrderStatus(
 /**
  * Notification log write (S-7, 1.x-4 — migration 0012).
  *
- * One row in notification_log per order-status email attempt, via
+ * One row in notification_log per order email attempt, via
  * the SECURITY DEFINER log_notification function (the table itself
  * has no policies and no grants — deny-by-default, same as
  * order_status_events). NEVER throws: a failed log write must never
@@ -294,7 +294,7 @@ export async function adminUpdateOrderStatus(
  */
 export async function logNotificationAttempt(input: {
   orderReference: string;
-  type: "order_status" | "back_in_stock";
+  type: "order_status" | "back_in_stock" | "payment_failed";
   status: string;
   recipient: string | null;
   result: "sent" | "failed" | "skipped";
