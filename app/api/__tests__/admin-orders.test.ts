@@ -13,6 +13,7 @@ const {
   updateOrderStatusMock,
   updatePaymentStatusMock,
   sendStatusEmailMock,
+  sendPaymentFailedEmailMock,
 } = vi.hoisted(() => ({
   adminClientMock: vi.fn(),
   checkAccessMock: vi.fn(),
@@ -21,6 +22,7 @@ const {
   updateOrderStatusMock: vi.fn(),
   updatePaymentStatusMock: vi.fn(),
   sendStatusEmailMock: vi.fn(),
+  sendPaymentFailedEmailMock: vi.fn(),
 }));
 
 /**
@@ -44,6 +46,7 @@ vi.mock("@/app/admin/(protected)/admin-data", async (importOriginal) => {
 });
 vi.mock("@/lib/order-email", () => ({
   sendOrderStatusEmail: sendStatusEmailMock,
+  sendPaymentFailedEmail: sendPaymentFailedEmailMock,
 }));
 vi.mock("@/lib/supabase/admin", () => ({
   checkAdminAccess: checkAccessMock,
@@ -223,6 +226,8 @@ describe("POST /api/admin/orders/[reference]/payment", () => {
       status: "ok",
       user: { id: "admin-id" },
     });
+    updatePaymentStatusMock.mockResolvedValue({ ok: true });
+    sendPaymentFailedEmailMock.mockResolvedValue({ status: "sent" });
   });
 
   it("answers 401 JSON with the reason when the session ended — never a redirect", async () => {
@@ -236,5 +241,72 @@ describe("POST /api/admin/orders/[reference]/payment", () => {
       code: "unauthenticated",
     });
     expect(updatePaymentStatusMock).not.toHaveBeenCalled();
+    expect(sendPaymentFailedEmailMock).not.toHaveBeenCalled();
+  });
+
+  it("calls the payment-failed email once when the payment is marked failed", async () => {
+    const res = await postPayment({ status: "failed" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      ok: true,
+      reference: REFERENCE,
+      status: "failed",
+    });
+    expect(updatePaymentStatusMock).toHaveBeenCalledWith(REFERENCE, "failed");
+    expect(sendPaymentFailedEmailMock).toHaveBeenCalledTimes(1);
+    expect(sendPaymentFailedEmailMock).toHaveBeenCalledWith({
+      reference: REFERENCE,
+      note: null,
+    });
+  });
+
+  it("passes the admin note through to the payment-failed email", async () => {
+    const res = await postPayment({
+      status: "failed",
+      note: "Transaction ID not found",
+    });
+    expect(res.status).toBe(200);
+    expect(sendPaymentFailedEmailMock).toHaveBeenCalledWith({
+      reference: REFERENCE,
+      note: "Transaction ID not found",
+    });
+  });
+
+  it("does not send an email when the payment is marked paid", async () => {
+    const res = await postPayment({ status: "paid" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      ok: true,
+      reference: REFERENCE,
+      status: "paid",
+    });
+    expect(updatePaymentStatusMock).toHaveBeenCalledWith(REFERENCE, "paid");
+    expect(sendPaymentFailedEmailMock).not.toHaveBeenCalled();
+  });
+
+  it("does not send an email when the transition is invalid", async () => {
+    updatePaymentStatusMock.mockResolvedValue({
+      ok: false,
+      error: "invalid_transition",
+    });
+    const res = await postPayment({ status: "failed" });
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({
+      ok: false,
+      error: "Only a pending payment can be marked paid or failed.",
+    });
+    expect(sendPaymentFailedEmailMock).not.toHaveBeenCalled();
+  });
+
+  it("still returns ok when the email send fails — the update never fails on email", async () => {
+    sendPaymentFailedEmailMock.mockRejectedValue(new Error("SMTP down"));
+    const res = await postPayment({ status: "failed" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      ok: true,
+      reference: REFERENCE,
+      status: "failed",
+    });
+    expect(updatePaymentStatusMock).toHaveBeenCalledTimes(1);
   });
 });

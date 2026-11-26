@@ -37,9 +37,9 @@ import {
  *   short timeout (EMAIL_SEND_TIMEOUT_MS) so a hung SMTP connection
  *   cannot stall the checkout response.
  *
- * No other emails live here: no admin, marketing, or payment email.
- * Those are future work, only if the owner asks. Back-in-stock
- * alerts live here too — see the section at the bottom.
+ * No other emails live here: no admin or marketing email.
+ * Back-in-stock alerts and the payment-failed email live here
+ * too — see the sections at the bottom.
  *
  * Order status emails (S-7, 1.x-4, F18) live here too — see
  * ORDER_STATUS_EMAIL_TRIGGERS below. One short email per admin
@@ -817,5 +817,273 @@ export async function sendBackInStockAlertsForProduct(input: {
       error instanceof Error ? error.message : "unknown error",
     );
     return zero;
+  }
+}
+// ---------------------------------------------------------------------------
+// Payment-failed email (S-7 — the payment-failure event)
+// ---------------------------------------------------------------------------
+
+/**
+ * Payment-failed email — the "failed" customers actually experience.
+ * The order status `failed` is unreachable (no live path sets it),
+ * so this is NOT an order-status email: the admin marks a payment
+ * failed by hand on POST /api/admin/orders/[reference]/payment
+ * after checking the Transaction ID, and that marking is the only
+ * trigger. Failed is TERMINAL — once marked failed a payment can
+ * never be corrected to paid in the product (the RPC only moves a
+ * pending payment), so the email points the customer to the
+ * Contact page and the owner sorts it out by hand. There is no
+ * re-pay flow on the site, so the email never tells the customer
+ * to "pay again", and it never prints a WhatsApp number (none has
+ * been provided). Every attempt is written to notification_log
+ * (migration 0014) with type 'payment_failed'.
+ */
+export interface PaymentFailedEmailOrder extends OrderStatusEmailOrder {
+  paymentMethod: string;
+  paymentReference: string | null;
+}
+
+/**
+ * Pure builder: payment-failed email for one order. Same shape as
+ * buildOrderStatusEmail (subject / text / html, no secrets). The
+ * `note` is the admin's note — rendered verbatim, so the admin
+ * form labels it customer-visible. The sender number is never
+ * rendered anywhere (S-6); the Transaction ID is shown for mobile
+ * banking only, mirroring the confirmation email.
+ */
+export function buildPaymentFailedEmail(
+  order: PaymentFailedEmailOrder,
+  customerEmail: string,
+  fromAddress: string,
+  note?: string | null,
+): OrderConfirmationEmail {
+  const trackUrl = `${SITE_URL}/orders?ref=${order.reference}`;
+  const contactUrl = `${SITE_URL}/contact`;
+  const subject = `Your RabbY order ${order.reference} — we couldn't verify your payment`;
+  const meaning =
+    "We checked the payment for your order and could not verify it. Your order has not been cancelled — only the payment needs sorting out.";
+  const adminNote =
+    note && note.trim().length > 0 ? note.trim() : null;
+
+  const itemLines = order.items
+    .map(
+      (item) =>
+        `- ${item.productName}${item.variantColour ? ` — ${item.variantColour}` : ""} × ${item.quantity} — ${formatPriceBdt(item.lineTotalBdt)}`,
+    )
+    .join("\n");
+
+  const text = [
+    `Hi ${order.customerName},`,
+    ``,
+    `Your order ${order.reference} — we couldn't verify your payment.`,
+    meaning,
+    ...(isMobileBankingMethod(order.paymentMethod) && order.paymentReference
+      ? [`Transaction ID: ${order.paymentReference}`]
+      : []),
+    ...(adminNote ? [`Note: ${adminNote}`] : []),
+    ``,
+    `Please contact us from the Contact page (${contactUrl}) with your order reference, and we'll sort it out with you.`,
+    ``,
+    `Items:`,
+    itemLines,
+    ``,
+    `Total: ${formatPriceBdt(order.totalBdt)}`,
+    ``,
+    `Track your order: ${trackUrl}`,
+    ``,
+    `Thank you for shopping with RabbY.`,
+  ].join("\n");
+
+  const itemRows = order.items
+    .map(
+      (item) =>
+        `<tr><td style="padding:6px 0;">${escapeHtml(item.productName)}${item.variantColour ? ` — ${escapeHtml(item.variantColour)}` : ""} × ${item.quantity}</td><td style="padding:6px 0;text-align:right;">${formatPriceBdt(item.lineTotalBdt)}</td></tr>`,
+    )
+    .join("");
+
+  const html = [
+    `<p>Hi ${escapeHtml(order.customerName)},</p>`,
+    `<p>Your order <strong>${escapeHtml(order.reference)}</strong> — ${escapeHtml("we couldn't verify your payment.")}</p>`,
+    `<p>${escapeHtml(meaning)}</p>`,
+    ...(isMobileBankingMethod(order.paymentMethod) && order.paymentReference
+      ? [`<p>Transaction ID: ${escapeHtml(order.paymentReference)}</p>`]
+      : []),
+    ...(adminNote ? [`<p>Note: ${escapeHtml(adminNote)}</p>`] : []),
+    `<p>Please contact us from the <a href="${contactUrl}">Contact page</a> with your order reference, and ${escapeHtml("we'll sort it out with you.")}</p>`,
+    `<table style="width:100%;border-collapse:collapse;">${itemRows}</table>`,
+    `<p><strong>Total: ${formatPriceBdt(order.totalBdt)}</strong></p>`,
+    `<p><a href="${trackUrl}">Track your order</a></p>`,
+    `<p>Thank you for shopping with RabbY.</p>`,
+  ].join("\n");
+
+  return {
+    from: `RabbY <${fromAddress}>`,
+    to: customerEmail,
+    subject,
+    text,
+    html,
+  };
+}
+
+/**
+ * Best-effort write to notification_log (migration 0014) for a
+ * payment-failed email attempt — same never-throws contract as
+ * logStatusEmailAttempt above.
+ */
+async function logPaymentFailedEmailAttempt(input: {
+  reference: string;
+  recipient: string | null;
+  result: EmailSendStatus;
+  reason?: string;
+}): Promise<void> {
+  try {
+    await logNotificationAttempt({
+      orderReference: input.reference,
+      type: "payment_failed",
+      status: "payment_failed",
+      recipient: input.recipient,
+      result: input.result,
+      error: input.result === "sent" ? null : (input.reason ?? null),
+    });
+  } catch {
+    // Best-effort audit log — see above.
+  }
+}
+
+/**
+ * Send the payment-failed email for one admin payment marking.
+ * NEVER throws: every failure path returns { status: "failed" } (or
+ * "skipped") after a server-side log carrying only the reference +
+ * a plain-words reason — never the customer email, never a secret.
+ * The caller (the payment route) already committed the marking
+ * before calling this, so a failed send never fails the update.
+ *
+ * Fires at most once per order by construction: the RPC
+ * (admin_update_payment_status, migration 0005) only moves a
+ * pending payment, so there is no re-save path and no duplicate
+ * to guard against. A Cancelled order is skipped — the customer
+ * already knows that order is cancelled. The order is fetched
+ * with adminGetOrder — the guest lookup deliberately hides the
+ * customer email (migration 0006), so only the admin-side read
+ * has it.
+ */
+export async function sendPaymentFailedEmail(input: {
+  reference: string;
+  /** The admin note — rendered in the email verbatim (customer-visible). */
+  note?: string | null;
+}): Promise<EmailSendResult> {
+  const user = process.env.GMAIL_USER;
+  const pass = process.env.GMAIL_APP_PASSWORD;
+  if (!user || !pass) {
+    // Email not configured (local dev, CI, or env vars not set yet):
+    // skip silently. The payment update itself is unaffected.
+    await logPaymentFailedEmailAttempt({
+      reference: input.reference,
+      recipient: null,
+      result: "skipped",
+      reason: "email not configured",
+    });
+    return { status: "skipped", reason: "email not configured" };
+  }
+
+  let recipient: string | null = null;
+  try {
+    const adminOrder = await adminGetOrder(input.reference);
+    if (!adminOrder) {
+      console.error(
+        "[order-email] payment-failed email skipped: order not found",
+        input.reference,
+      );
+      await logPaymentFailedEmailAttempt({
+        reference: input.reference,
+        recipient: null,
+        result: "failed",
+        reason: "order not found",
+      });
+      return { status: "failed", reason: "order not found" };
+    }
+
+    // Cancelled guard — the customer already knows the order is
+    // cancelled; a payment-failed email for it would only confuse.
+    // Delivered orders still get the email (the customer holds the
+    // order and needs to know the payment could not be verified).
+    if (adminOrder.order.status === "cancelled") {
+      await logPaymentFailedEmailAttempt({
+        reference: input.reference,
+        recipient: null,
+        result: "skipped",
+        reason: "order cancelled",
+      });
+      return { status: "skipped", reason: "order cancelled" };
+    }
+
+    recipient = adminOrder.order.customer_email;
+    if (!recipient) {
+      console.error(
+        "[order-email] payment-failed email skipped: no customer email",
+        input.reference,
+      );
+      await logPaymentFailedEmailAttempt({
+        reference: input.reference,
+        recipient: null,
+        result: "failed",
+        reason: "no customer email",
+      });
+      return { status: "failed", reason: "no customer email" };
+    }
+
+    const email = buildPaymentFailedEmail(
+      {
+        reference: adminOrder.order.reference,
+        customerName: adminOrder.order.customer_name,
+        items: adminOrder.items.map((item) => ({
+          productName: item.name,
+          variantColour: item.variant_colour,
+          quantity: item.quantity,
+          lineTotalBdt: item.price_bdt * item.quantity,
+        })),
+        totalBdt: adminOrder.order.total_bdt,
+        paymentMethod: adminOrder.order.payment_method,
+        paymentReference: adminOrder.order.payment_reference,
+      },
+      recipient,
+      user,
+      input.note ?? null,
+    );
+    const transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: { user, pass },
+      connectionTimeout: 8000,
+      socketTimeout: 8000,
+    });
+    await withTimeout(
+      transporter.sendMail({
+        from: email.from,
+        to: email.to,
+        subject: email.subject,
+        text: email.text,
+        html: email.html,
+      }),
+      EMAIL_SEND_TIMEOUT_MS,
+    );
+    await logPaymentFailedEmailAttempt({
+      reference: input.reference,
+      recipient,
+      result: "sent",
+    });
+    return { status: "sent" };
+  } catch (error) {
+    console.error(
+      "[order-email] payment-failed email failed",
+      input.reference,
+      error instanceof Error ? error.message : "unknown error",
+    );
+    await logPaymentFailedEmailAttempt({
+      reference: input.reference,
+      recipient,
+      result: "failed",
+      reason: "send failed",
+    });
+    return { status: "failed", reason: "send failed" };
   }
 }

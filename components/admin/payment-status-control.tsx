@@ -9,6 +9,11 @@ import { useState } from "react";
  * is pending. Marks a mobile-banking / card payment paid or failed
  * (pending → paid/failed is the only move the server allows). The
  * sender number is never shown here or anywhere in the admin UI.
+ * The optional note is sent with the marking and, on Failed, goes
+ * to the customer verbatim in the payment-failed email (S-7) — it
+ * is the only place the per-order reason lives, so the input
+ * labels it customer-visible. The control never promises an email:
+ * the proof an email went out is notification_log.
  */
 export default function PaymentStatusControl({
   reference,
@@ -16,6 +21,7 @@ export default function PaymentStatusControl({
   reference: string;
 }) {
   const router = useRouter();
+  const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState<"paid" | "failed" | null>(null);
@@ -28,7 +34,7 @@ export default function PaymentStatusControl({
       const res = await fetch(`/api/admin/orders/${reference}/payment`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({ status, note: note.trim() || null }),
       });
       const json: { ok?: boolean; error?: string } = await res.json();
       // Timed out (S-6 follow-up, D-S6-1): the proxy answered 401
@@ -50,6 +56,7 @@ export default function PaymentStatusControl({
           ? "Payment marked as paid."
           : "Payment marked as failed.",
       );
+      setNote("");
       router.refresh();
     } catch {
       setError("Something went wrong. Please try again.");
@@ -70,6 +77,20 @@ export default function PaymentStatusControl({
           {message}
         </p>
       ) : null}
+      <label className="block">
+        <span className="mb-1 block text-sm font-semibold text-text">
+          Note (optional — the customer will see this on a failed
+          payment)
+        </span>
+        <input
+          type="text"
+          value={note}
+          onChange={(event) => setNote(event.target.value)}
+          placeholder="e.g. Transaction ID not found"
+          maxLength={500}
+          className="min-h-11 w-full rounded-md border border-border bg-background px-3 py-2 text-base text-text placeholder:text-text-secondary"
+        />
+      </label>
       <div className="flex flex-wrap gap-3">
         <button
           type="button"
