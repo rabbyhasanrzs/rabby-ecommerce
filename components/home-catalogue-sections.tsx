@@ -1,6 +1,7 @@
 import ProductCard from "@/components/product-card";
 import {
   CatalogueUnavailableError,
+  listActivities,
   listCategories,
   listProducts,
   parseListingParams,
@@ -9,8 +10,9 @@ import Link from "next/link";
 import { connection } from "next/server";
 
 /**
- * Home catalogue sections (S-5, Slice B) — Shop by category + New
- * arrivals, from the live catalogue, never invented.
+ * Home catalogue sections (S-5, Slice B) — Shop by category + Shop by
+ * Activity (S-7, 1.x-6, F17) + New arrivals, from the live catalogue,
+ * never invented.
  *
  * New arrivals use the SAME definition as the listing's "Newest"
  * sort (sortProducts "newest" = created_at descending): the newest
@@ -29,20 +31,22 @@ const NEW_ARRIVALS_COUNT = 4;
 async function loadCatalogueSections() {
   // Prerendering stops here: the fetches below run only at request time.
   await connection();
-  const [categories, { products }] = await Promise.all([
+  const [categories, activities, { products }] = await Promise.all([
     listCategories(),
+    listActivities(),
     listProducts(parseListingParams({ sort: "newest" })),
   ]);
-  return { categories, newArrivals: products.slice(0, NEW_ARRIVALS_COUNT) };
+  return { categories, activities, newArrivals: products.slice(0, NEW_ARRIVALS_COUNT) };
 }
 
 export default async function HomeCatalogueSections() {
   let categories: Awaited<ReturnType<typeof listCategories>> = [];
+  let activities: Awaited<ReturnType<typeof listActivities>> = [];
   let newArrivals: Awaited<
     ReturnType<typeof listProducts>
   >["products"] = [];
   try {
-    ({ categories, newArrivals } = await loadCatalogueSections());
+    ({ categories, activities, newArrivals } = await loadCatalogueSections());
   } catch (error) {
     if (error instanceof CatalogueUnavailableError) {
       return (
@@ -83,6 +87,40 @@ export default async function HomeCatalogueSections() {
                 >
                   <span className="font-display text-xl font-bold text-text group-hover:text-action">
                     {category.name}
+                  </span>
+                  <span
+                    aria-hidden="true"
+                    className="text-lg font-semibold text-text-secondary transition-colors group-hover:text-action"
+                  >
+                    →
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {/* Shop by Activity — only activities with ≥1 tagged active
+          product (S-7, 1.x-6, F17). Text-only tiles like the category
+          tiles; hidden entirely when nothing is tagged. */}
+      {activities.length > 0 ? (
+        <section
+          aria-label="Shop by Activity"
+          className="mx-auto w-full max-w-7xl px-4 py-12 md:px-8"
+        >
+          <h2 className="font-display text-2xl font-bold tracking-tight text-text md:text-3xl">
+            Shop by Activity
+          </h2>
+          <ul className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {activities.map((activity) => (
+              <li key={activity.slug}>
+                <Link
+                  href={`/sunglasses?activity=${activity.slug}`}
+                  className="group flex min-h-24 items-center justify-between gap-4 rounded-lg border border-border bg-surface px-6 py-5 shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:border-border-strong hover:shadow-md"
+                >
+                  <span className="font-display text-xl font-bold text-text group-hover:text-action">
+                    {activity.label}
                   </span>
                   <span
                     aria-hidden="true"

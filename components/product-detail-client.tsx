@@ -8,6 +8,7 @@ import { StarsDisplay } from "@/components/star-rating";
 import StockAlertForm from "@/components/stock-alert-form";
 import WishlistButton from "@/components/wishlist-button";
 import { useBag } from "@/lib/bag-context";
+import { activityLabel } from "@/lib/activities";
 import { formatPriceBdt, stockLabel } from "@/lib/format";
 import {
   faceShapeChipLabel,
@@ -171,6 +172,14 @@ export default function ProductDetailClient({
         {product.category_name ? (
           <p className="text-sm font-semibold text-text-secondary">
             {product.category_name}
+          </p>
+        ) : null}
+        {/* S-7 Shop by Activity (1.x-6, F17) — plain text where the
+            category already shows, only when tagged. */}
+        {product.activities && product.activities.length > 0 ? (
+          <p className="mt-2 text-sm text-text-secondary">
+            Good for:{" "}
+            {product.activities.map(activityLabel).join(", ")}
           </p>
         ) : null}
         <h1 className="mt-2 font-display text-3xl font-bold tracking-tight text-text md:text-4xl">

@@ -14,6 +14,7 @@ const SAMPLE: ProductSummary = {
   category_id: "c1",
   category_slug: "women",
   category_name: "Women",
+  activities: [],
   price_bdt: 950,
   stock_total: 12,
   is_demo: true,

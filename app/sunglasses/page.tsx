@@ -2,6 +2,7 @@ import CatalogueUnavailable from "@/components/catalogue-unavailable";
 import ProductCard from "@/components/product-card";
 import {
   CatalogueUnavailableError,
+  listActivities,
   listCategories,
   listProducts,
   parseListingParams,
@@ -28,9 +29,11 @@ import { Suspense } from "react";
  * "catalogue unavailable" state, never an error.
  *
  * Filters (GET form, no JavaScript needed): search text (name +
- * description), category, sort (Featured / Price low→high / Price
- * high→low / Newest), price range, in-stock-only toggle. "Showing X of
- * Y products", empty state + Reset Filters. No bag/checkout in S-1.
+ * description), category, activity (S-7, 1.x-6 — only activities with
+ * tagged products are offered), sort (Featured / Price low→high /
+ * Price high→low / Newest), price range, in-stock-only toggle.
+ * "Showing X of Y products", empty state + Reset Filters. No
+ * bag/checkout in S-1.
  */
 
 const SORT_OPTIONS = [
@@ -50,11 +53,13 @@ async function ListingContent({
   const params = parseListingParams(await searchParams);
 
   let categories: Awaited<ReturnType<typeof listCategories>> = [];
+  let activities: Awaited<ReturnType<typeof listActivities>> = [];
   let products: Awaited<ReturnType<typeof listProducts>>["products"] = [];
   let total = 0;
   try {
-    [categories, { products, total }] = await Promise.all([
+    [categories, activities, { products, total }] = await Promise.all([
       listCategories(),
+      listActivities(),
       listProducts(params),
     ]);
   } catch (error) {
@@ -79,6 +84,7 @@ async function ListingContent({
   const hasActiveFilters =
     params.search !== "" ||
     params.category !== "" ||
+    params.activity !== "" ||
     params.sort !== "featured" ||
     params.priceMin !== undefined ||
     params.priceMax !== undefined ||
@@ -119,6 +125,24 @@ async function ListingContent({
               {categories.map((category) => (
                 <option key={category.id} value={category.slug}>
                   {category.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="block">
+            <span className="mb-1 block text-sm font-semibold text-text">
+              Activity
+            </span>
+            <select
+              name="activity"
+              defaultValue={params.activity}
+              className="h-11 w-full rounded-md border border-border bg-background px-3 text-base text-text"
+            >
+              <option value="">All activities</option>
+              {activities.map((activity) => (
+                <option key={activity.slug} value={activity.slug}>
+                  {activity.label}
                 </option>
               ))}
             </select>

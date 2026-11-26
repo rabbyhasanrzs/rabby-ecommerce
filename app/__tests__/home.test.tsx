@@ -2,8 +2,10 @@ import Home from "@/app/page";
 import HomeCatalogueSections from "@/components/home-catalogue-sections";
 import {
   CatalogueUnavailableError,
+  listActivities,
   listCategories,
   listProducts,
+  type Activity,
   type Category,
   type ProductSummary,
 } from "@/lib/supabase/catalog";
@@ -53,11 +55,13 @@ vi.mock("@/lib/supabase/catalog", async (importOriginal) => {
     await importOriginal<typeof import("@/lib/supabase/catalog")>();
   return {
     ...actual,
+    listActivities: vi.fn(),
     listCategories: vi.fn(),
     listProducts: vi.fn(),
   };
 });
 
+const mockedListActivities = vi.mocked(listActivities);
 const mockedListCategories = vi.mocked(listCategories);
 const mockedListProducts = vi.mocked(listProducts);
 
@@ -81,6 +85,7 @@ function product(
     category_id: "c1",
     category_slug: "women",
     category_name: "Women",
+    activities: [],
     price_bdt: 950,
     stock_total: 12,
     is_demo: true,
@@ -99,6 +104,7 @@ const NEWEST_FIVE = [
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockedListActivities.mockResolvedValue([]);
   mockedListCategories.mockResolvedValue(CATEGORIES);
   mockedListProducts.mockResolvedValue({
     products: NEWEST_FIVE,
@@ -194,6 +200,36 @@ describe("HomeCatalogueSections (awaited server component)", () => {
       "/sunglasses?category=polarized",
     );
     expect(screen.queryByText(/Placeholder/i)).not.toBeInTheDocument();
+  });
+
+  it("shows Shop by Activity tiles when activities are tagged, linking to the filtered listing (S-7, 1.x-6)", async () => {
+    const activities: Activity[] = [
+      { slug: "driving", label: "Driving" },
+      { slug: "beach", label: "Beach" },
+    ];
+    mockedListActivities.mockResolvedValue(activities);
+    render(await HomeCatalogueSections());
+
+    expect(
+      screen.getByRole("heading", { name: "Shop by Activity" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Driving" })).toHaveAttribute(
+      "href",
+      "/sunglasses?activity=driving",
+    );
+    expect(screen.getByRole("link", { name: "Beach" })).toHaveAttribute(
+      "href",
+      "/sunglasses?activity=beach",
+    );
+  });
+
+  it("hides Shop by Activity entirely when nothing is tagged", async () => {
+    mockedListActivities.mockResolvedValue([]);
+    render(await HomeCatalogueSections());
+
+    expect(
+      screen.queryByRole("heading", { name: "Shop by Activity" }),
+    ).not.toBeInTheDocument();
   });
 
   it("shows new arrivals with the listing's 'newest' definition — newest 4 only", async () => {

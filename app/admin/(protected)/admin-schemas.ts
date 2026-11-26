@@ -1,3 +1,4 @@
+import { activitySchema } from "@/lib/activities";
 import { z } from "zod";
 
 /**
@@ -22,6 +23,15 @@ import { z } from "zod";
 export const productSaveSchema = z.object({
   name: z.string().trim().min(2, "Enter a product name.").max(100),
   categoryId: z.string().uuid("Choose a category.").nullable(),
+  /**
+   * Shop by Activity (S-7, 1.x-6, F17) — the activities the owner
+   * tagged in admin. Optional on the wire (older saves have none)
+   * and defaulting to []: an untagged product simply has no
+   * activities. Values are constrained to the 4 approved slugs by
+   * the schema AND by the 0015 CHECK — the form can only send what
+   * the database accepts.
+   */
+  activities: z.array(activitySchema).default([]),
   priceBdt: z
     .number()
     .int("Price must be a whole number of Taka.")
