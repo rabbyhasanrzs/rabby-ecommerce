@@ -26,7 +26,8 @@ import { useActionState, useState } from "react";
  * taxRatePercent, deliveryInsideFeeBdt, deliveryInsideEstimate,
  * deliveryOutsideFeeBdt, deliveryOutsideEstimate,
  * paymentCodEnabled / paymentBkashEnabled / paymentNagadEnabled /
- * paymentRocketEnabled / paymentCardEnabled, websiteNotice,
+ * paymentRocketEnabled / paymentCardEnabled /
+ * paymentOnlineEnabled (S-7, SSLCommerz), websiteNotice,
  * supportWhatsapp / supportMessenger / supportPhone / supportEmail.
  * Payment toggles are plain checkboxes (value "on"): an unchecked
  * box sends nothing, and parseSiteSettingsForm treats a missing
@@ -63,6 +64,9 @@ const PAYMENT_METHODS = [
   { field: "paymentNagadEnabled", label: "Nagad" },
   { field: "paymentRocketEnabled", label: "Rocket" },
   { field: "paymentCardEnabled", label: "Debit / Credit Card" },
+  // S-7: the SSLCommerz online toggle. Off by default — turn it on
+  // only after the sandbox credentials are in the Vercel env vars.
+  { field: "paymentOnlineEnabled", label: "Pay Online (SSLCommerz)" },
 ] as const;
 
 type PaymentField = (typeof PAYMENT_METHODS)[number]["field"];
@@ -330,7 +334,9 @@ export default function SettingsForm({
           </h2>
           <p className="mt-1 text-sm text-text-secondary">
             Turn a method off and shoppers cannot choose it at checkout —
-            orders already placed are not affected.
+            orders already placed are not affected. Pay Online needs
+            the SSLCommerz credentials in the Vercel env vars — turning
+            it on without them changes nothing at checkout.
           </p>
           <ul className="mt-4 space-y-3">
             {PAYMENT_METHODS.map((method) => (

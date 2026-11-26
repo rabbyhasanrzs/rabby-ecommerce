@@ -54,7 +54,7 @@ export const checkoutFormSchema = z.object({
     .min(10, "Enter your full delivery address.")
     .max(500),
   zone: z.enum(["inside", "outside"]),
-  paymentMethod: z.enum(["cod", "bkash", "nagad", "rocket", "card"]),
+  paymentMethod: z.enum(["cod", "bkash", "nagad", "rocket", "card", "online"]),
   /**
    * Mobile-banking payment details (S-3, demo-safe). Only bkash /
    * nagad / rocket use them; the per-method rules live in the
@@ -94,9 +94,11 @@ export const checkoutFormSchema = z.object({
       });
     }
   } else {
-    // COD / card: no payment details are collected — any value sent
-    // (e.g. typed before switching method) is rejected, not ignored,
-    // so a stale TrxID can never reach an order.
+    // COD / card / online: no payment details are collected — any
+    // value sent (e.g. typed before switching method) is rejected,
+    // not ignored, so a stale TrxID can never reach an order. For
+    // online, the gateway collects the payment after the order is
+    // created — never this form.
     if (reference !== "") {
       ctx.addIssue({
         code: "custom",

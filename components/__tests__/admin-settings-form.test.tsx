@@ -78,7 +78,9 @@ describe("SettingsForm", () => {
       screen.getByRole("heading", { name: "Support contacts" }),
     ).toBeInTheDocument();
 
-    // All five payment toggles, all on by default.
+    // Five payment toggles on by default; Pay Online (S-7) off by
+    // default until the owner turns it on after the sandbox
+    // credentials are in.
     for (const label of [
       "Cash on Delivery",
       "bKash",
@@ -88,6 +90,7 @@ describe("SettingsForm", () => {
     ]) {
       expect(screen.getByLabelText(label)).toBeChecked();
     }
+    expect(screen.getByLabelText("Pay Online (SSLCommerz)")).not.toBeChecked();
 
     // DEMO10 pre-seeded, active, 10% off.
     expect(screen.getByText("DEMO10")).toBeInTheDocument();

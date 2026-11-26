@@ -61,6 +61,7 @@ function settingsResponse(overrides: Record<string, unknown> = {}) {
       paymentNagadEnabled: true,
       paymentRocketEnabled: true,
       paymentCardEnabled: true,
+      paymentOnlineEnabled: false,
       websiteNotice: "",
       supportWhatsapp: "",
       supportMessenger: "",
@@ -89,10 +90,10 @@ describe("CheckoutForm payment methods follow the admin settings", () => {
     render(<CheckoutForm />);
 
     await waitFor(() => {
-      expect(radio(/Rocket/)).not.toBeInTheDocument();
+      expect(radio(/^Rocket/)).not.toBeInTheDocument();
     });
-    expect(radio(/bKash/)).toBeInTheDocument();
-    expect(radio(/Nagad/)).toBeInTheDocument();
+    expect(radio(/^bKash/)).toBeInTheDocument();
+    expect(radio(/^Nagad/)).toBeInTheDocument();
     expect(radio(/Cash on Delivery/)).toBeInTheDocument();
     expect(radio(/Debit \/ Credit Card/)).toBeInTheDocument();
     // The Mobile Banking group stays — bKash and Nagad are still offered.
@@ -110,7 +111,7 @@ describe("CheckoutForm payment methods follow the admin settings", () => {
     await waitFor(() => {
       expect(radio(/Cash on Delivery/)).not.toBeInTheDocument();
     });
-    expect(radio(/bKash/)?.checked).toBe(true);
+    expect(radio(/^bKash/)?.checked).toBe(true);
   });
 
   it("hides a whole group when all of its methods are switched off", async () => {
@@ -120,14 +121,15 @@ describe("CheckoutForm payment methods follow the admin settings", () => {
         paymentNagadEnabled: false,
         paymentRocketEnabled: false,
         paymentCardEnabled: false,
+        paymentOnlineEnabled: false,
       }),
     );
     render(<CheckoutForm />);
 
     await waitFor(() => {
-      expect(radio(/bKash/)).not.toBeInTheDocument();
+      expect(radio(/^bKash/)).not.toBeInTheDocument();
     });
-    expect(radio(/Rocket/)).not.toBeInTheDocument();
+    expect(radio(/^Rocket/)).not.toBeInTheDocument();
     expect(radio(/Debit \/ Credit Card/)).not.toBeInTheDocument();
     expect(
       screen.queryByText("Mobile Banking", { selector: "legend" }),
@@ -144,9 +146,9 @@ describe("CheckoutForm payment methods follow the admin settings", () => {
 
     // The fallback is the demo-config list: everything is offered.
     expect(radio(/Cash on Delivery/)).toBeInTheDocument();
-    expect(radio(/bKash/)).toBeInTheDocument();
-    expect(radio(/Nagad/)).toBeInTheDocument();
-    expect(radio(/Rocket/)).toBeInTheDocument();
+    expect(radio(/^bKash/)).toBeInTheDocument();
+    expect(radio(/^Nagad/)).toBeInTheDocument();
+    expect(radio(/^Rocket/)).toBeInTheDocument();
     expect(radio(/Debit \/ Credit Card/)).toBeInTheDocument();
   });
 });

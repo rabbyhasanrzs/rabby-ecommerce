@@ -41,6 +41,17 @@ async function AdminOrderDetailPageContent({
   const paymentMethodLabel =
     PAYMENT_METHODS.find((method) => method.id === order.payment_method)
       ?.label ?? order.payment_method;
+  // S-7: the gateway record, if the order has one — a single
+  // non-null handle so the JSX below does not re-check null.
+  const gateway =
+    payment &&
+    (payment.gateway_val_id ||
+      payment.gateway_bank_tran_id ||
+      payment.gateway_card_brand ||
+      payment.gateway_store_amount_bdt !== null ||
+      payment.gateway_session_key)
+      ? payment
+      : null;
   const zoneLabel =
     DELIVERY_OPTIONS[order.zone as "inside" | "outside"]?.label ?? order.zone;
 
@@ -144,6 +155,64 @@ async function AdminOrderDetailPageContent({
                   {payment?.reference ?? order.payment_reference}
                 </dd>
               </div>
+            ) : null}
+            {gateway ? (
+              <>
+                <div className="flex justify-between gap-4">
+                  <dt className="text-text-secondary">Gateway</dt>
+                  <dd className="font-semibold text-text">SSLCommerz</dd>
+                </div>
+                {gateway.gateway_session_key ? (
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-text-secondary">Session key</dt>
+                    <dd className="break-all text-right font-semibold text-text">
+                      {gateway.gateway_session_key}
+                    </dd>
+                  </div>
+                ) : null}
+                {gateway.gateway_val_id ? (
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-text-secondary">Validation ID</dt>
+                    <dd className="break-all text-right font-semibold text-text">
+                      {gateway.gateway_val_id}
+                    </dd>
+                  </div>
+                ) : null}
+                {gateway.gateway_bank_tran_id ? (
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-text-secondary">
+                      Bank transaction ID
+                    </dt>
+                    <dd className="break-all text-right font-semibold text-text">
+                      {gateway.gateway_bank_tran_id}
+                    </dd>
+                  </div>
+                ) : null}
+                {gateway.gateway_card_brand ? (
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-text-secondary">Card / channel</dt>
+                    <dd className="font-semibold text-text">
+                      {gateway.gateway_card_brand}
+                    </dd>
+                  </div>
+                ) : null}
+                {gateway.gateway_store_amount_bdt !== null ? (
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-text-secondary">Amount received</dt>
+                    <dd className="font-semibold text-text">
+                      {formatPriceBdt(gateway.gateway_store_amount_bdt)}
+                    </dd>
+                  </div>
+                ) : null}
+                {gateway.gateway_risk_level === 1 ? (
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-text-secondary">Risk</dt>
+                    <dd className="font-semibold text-warning">
+                      Flagged as risky — review before shipping
+                    </dd>
+                  </div>
+                ) : null}
+              </>
             ) : null}
           </dl>
           {(payment?.status ?? order.payment_status) === "pending" ? (

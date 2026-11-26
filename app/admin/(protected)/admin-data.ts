@@ -146,6 +146,17 @@ export interface AdminOrderDetail {
     status: string;
     reference: string | null;
     sender: string | null;
+    /**
+     * S-7: the SSLCommerz gateway record (migration 0016) — null on
+     * pre-0016 rows and on non-online orders. Read-only: the admin
+     * order page renders it, nothing here is editable.
+     */
+    gateway_session_key: string | null;
+    gateway_val_id: string | null;
+    gateway_bank_tran_id: string | null;
+    gateway_card_brand: string | null;
+    gateway_store_amount_bdt: number | null;
+    gateway_risk_level: number | null;
   } | null;
 }
 

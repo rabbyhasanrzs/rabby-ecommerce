@@ -62,6 +62,7 @@ const settingsResponse = {
     paymentNagadEnabled: true,
     paymentRocketEnabled: true,
     paymentCardEnabled: true,
+    paymentOnlineEnabled: false,
     websiteNotice: "",
     supportWhatsapp: "",
     supportMessenger: "",
@@ -96,7 +97,7 @@ function fillValidForm() {
 }
 
 function selectBkash() {
-  fireEvent.click(screen.getByLabelText(/bKash/));
+  fireEvent.click(screen.getByLabelText(/^bKash/));
 }
 
 function mockSuccessfulCheckout() {
@@ -142,7 +143,7 @@ describe("CheckoutForm payment details (S-3, demo-safe)", () => {
   it("shows TrxID / sender fields for each mobile-banking method", () => {
     render(<CheckoutForm />);
 
-    for (const label of [/bKash/, /Nagad/, /Rocket/]) {
+    for (const label of [/^bKash/, /^Nagad/, /^Rocket/]) {
       fireEvent.click(screen.getByLabelText(label));
       expect(
         screen.getByLabelText("Transaction ID (TrxID)"),
@@ -290,7 +291,7 @@ describe("CheckoutForm payment details (S-3, demo-safe)", () => {
       target: { value: "01712345678" },
     });
 
-    fireEvent.click(screen.getByLabelText(/Nagad/));
+    fireEvent.click(screen.getByLabelText(/^Nagad/));
 
     expect(screen.getByLabelText("Transaction ID (TrxID)")).toHaveValue(
       "9A1B2C3D4E",

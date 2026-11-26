@@ -31,6 +31,7 @@ function validForm(): Record<string, unknown> {
     paymentNagadEnabled: true,
     paymentRocketEnabled: true,
     paymentCardEnabled: true,
+    paymentOnlineEnabled: true,
     websiteNotice: "",
     supportWhatsapp: "",
     supportMessenger: "",
@@ -52,12 +53,59 @@ describe("DEFAULT_SETTINGS", () => {
       paymentNagadEnabled: true,
       paymentRocketEnabled: true,
       paymentCardEnabled: true,
+      paymentOnlineEnabled: false,
       websiteNotice: "",
       supportWhatsapp: "",
       supportMessenger: "",
       supportPhone: "",
       supportEmail: "",
     });
+  });
+});
+
+describe("paymentOnlineEnabled (S-7 SSLCommerz toggle)", () => {
+  it("defaults to OFF — the owner turns it on after the sandbox credentials are in", () => {
+    expect(DEFAULT_SETTINGS.paymentOnlineEnabled).toBe(false);
+  });
+
+  it("maps the payment_online_enabled column", () => {
+    expect(
+      parseSiteSettingsRow({ payment_online_enabled: true })
+        .paymentOnlineEnabled,
+    ).toBe(true);
+    expect(
+      parseSiteSettingsRow({ payment_online_enabled: false })
+        .paymentOnlineEnabled,
+    ).toBe(false);
+  });
+
+  it("falls back to off when the column is missing or the wrong type", () => {
+    expect(parseSiteSettingsRow({}).paymentOnlineEnabled).toBe(false);
+    expect(
+      parseSiteSettingsRow({ payment_online_enabled: "yes" })
+        .paymentOnlineEnabled,
+    ).toBe(false);
+  });
+
+  it("is required by the admin save validation (a form without it fails)", () => {
+    const form = validForm();
+    delete form.paymentOnlineEnabled;
+    expect(siteSettingsFormSchema.safeParse(form).success).toBe(false);
+    expect(
+      siteSettingsFormSchema.safeParse({
+        ...validForm(),
+        paymentOnlineEnabled: false,
+      }).success,
+    ).toBe(true);
+  });
+
+  it("is read from the checkbox in parseSiteSettingsForm", () => {
+    const formData = new FormData();
+    formData.set("paymentOnlineEnabled", "on");
+    expect(parseSiteSettingsForm(formData).paymentOnlineEnabled).toBe(true);
+    expect(parseSiteSettingsForm(new FormData()).paymentOnlineEnabled).toBe(
+      false,
+    );
   });
 });
 
@@ -75,6 +123,7 @@ describe("parseSiteSettingsRow", () => {
         payment_nagad_enabled: false,
         payment_rocket_enabled: true,
         payment_card_enabled: false,
+        payment_online_enabled: true,
         website_notice: "Eid offer!",
         support_whatsapp: "01712345678",
         support_messenger: "rabby.shop",
@@ -92,6 +141,7 @@ describe("parseSiteSettingsRow", () => {
       paymentNagadEnabled: false,
       paymentRocketEnabled: true,
       paymentCardEnabled: false,
+      paymentOnlineEnabled: true,
       websiteNotice: "Eid offer!",
       supportWhatsapp: "01712345678",
       supportMessenger: "rabby.shop",
