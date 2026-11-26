@@ -29,6 +29,8 @@ const STATIC_ROUTES: {
   { path: "/help", changeFrequency: "monthly", priority: 0.7 },
   { path: "/guide/face-shape", changeFrequency: "monthly", priority: 0.7 },
   { path: "/guide/face-shape/bn", changeFrequency: "monthly", priority: 0.7 },
+  { path: "/guide/lens", changeFrequency: "monthly", priority: 0.7 },
+  { path: "/guide/lens/bn", changeFrequency: "monthly", priority: 0.7 },
   { path: "/returns", changeFrequency: "monthly", priority: 0.6 },
   { path: "/contact", changeFrequency: "monthly", priority: 0.6 },
   { path: "/privacy", changeFrequency: "yearly", priority: 0.4 },

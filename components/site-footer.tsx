@@ -15,6 +15,7 @@ const HELP_LINKS = [
   { href: "/help", label: "Help & FAQ" },
   { href: "/returns", label: "Returns & Exchange" },
   { href: "/guide/face-shape", label: "Face-Shape Guide" },
+  { href: "/guide/lens", label: "Lens Guide" },
   { href: "/contact", label: "Contact" },
 ] as const;
 

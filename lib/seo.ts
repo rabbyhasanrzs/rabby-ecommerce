@@ -58,6 +58,16 @@ export const PAGE_SEO: Record<string, PageSeo> = {
     description:
       "আপনার মুখের আকৃতি অনুযায়ী সানগ্লাস খুঁজুন — আকৃতি, বৈশিষ্ট্য, মানানসই ফ্রেম, আর মিলিমিটারে মাপ।",
   },
+  "/guide/lens": {
+    title: "Lens Guide",
+    description:
+      "The RabbY Lens — made for bright days: less glare, true colours, and comfort in bright light. Try the tints in the lens-colour simulator preview.",
+  },
+  "/guide/lens/bn": {
+    title: "লেন্স গাইড",
+    description:
+      "RabbY Lens — ujjol diner jonno banano: kom jholkani, asol rong, ar ujjol alote aram. Tint preview te tint gulo dekho.",
+  },
   "/contact": {
     title: "Contact",
     description:

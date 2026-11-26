@@ -173,6 +173,17 @@ describe("Home page (S-5 build-out)", () => {
     ).toHaveAttribute("href", "/help");
   });
 
+  it("teaser links to the lens guide", () => {
+    render(<Home />);
+
+    expect(
+      screen.getByRole("link", { name: "Open the lens guide" }),
+    ).toHaveAttribute("href", "/guide/lens");
+    expect(
+      screen.getByRole("heading", { name: "The RabbY Lens" }),
+    ).toBeInTheDocument();
+  });
+
   it("has no 'Placeholder' text anywhere on the static shell", () => {
     render(<Home />);
 
