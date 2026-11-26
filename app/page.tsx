@@ -97,6 +97,29 @@ export default function Home() {
         </div>
       </section>
 
+      {/* Lens story teaser → Lens Guide, next to "Find your fit". */}
+      <section
+        aria-label="The RabbY Lens"
+        className="mx-auto w-full max-w-7xl px-4 py-12 md:px-8"
+      >
+        <div className="rounded-lg border border-border bg-surface p-6 shadow-sm md:p-8">
+          <h2 className="font-display text-2xl font-bold tracking-tight text-text md:text-3xl">
+            The RabbY Lens
+          </h2>
+          <p className="mt-2 max-w-2xl text-base leading-relaxed text-text-secondary">
+            Made for bright days — less glare, true colours, and comfort
+            in bright light. See the scene through three tints in the
+            lens guide.
+          </p>
+          <Link
+            href="/guide/lens"
+            className="mt-6 inline-flex min-h-11 items-center rounded-md border border-border px-6 py-3 text-base font-semibold text-text transition-colors hover:border-action hover:text-action"
+          >
+            Open the lens guide
+          </Link>
+        </div>
+      </section>
+
       {/* Customer reviews — strategy §7.1 homepage order: after fit
           help, before FAQ. Renders nothing until the first approved
           review exists (S-7, migration 0011). */}

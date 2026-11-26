@@ -36,6 +36,18 @@ describe("SiteFooter finish (S-5)", () => {
     ).toHaveAttribute("href", "/sunglasses");
   });
 
+  it("links the Lens Guide next to the Face-Shape Guide", () => {
+    render(<SiteFooter />);
+
+    expect(screen.getByRole("link", { name: "Lens Guide" })).toHaveAttribute(
+      "href",
+      "/guide/lens",
+    );
+    expect(
+      screen.getByRole("link", { name: "Face-Shape Guide" }),
+    ).toHaveAttribute("href", "/guide/face-shape");
+  });
+
   it("shows the payment methods as text only, with no payment logos", () => {
     render(<SiteFooter />);
 
