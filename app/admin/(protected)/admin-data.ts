@@ -294,7 +294,7 @@ export async function adminUpdateOrderStatus(
  */
 export async function logNotificationAttempt(input: {
   orderReference: string;
-  type: "order_status";
+  type: "order_status" | "back_in_stock";
   status: string;
   recipient: string | null;
   result: "sent" | "failed" | "skipped";
@@ -329,6 +329,75 @@ export async function adminUpdatePaymentStatus(
     return result.data as { ok: boolean; error?: string };
   }
   return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Back-in-stock alert subscriptions (S-7 — migration 0013). The table
+// is admin-only (RLS deny-by-default, no policies); reads/writes go
+// through the SECURITY DEFINER functions below, which check
+// is_admin() server-side. The subscriber email is personal data
+// with one purpose — it is returned here for the admin list only,
+// never rendered on a customer-facing page.
+// ---------------------------------------------------------------------------
+
+export interface AdminStockAlertSubscription {
+  id: string;
+  product_id: string;
+  product_slug: string;
+  product_name: string;
+  email: string;
+  status: "pending" | "sent" | "unsubscribed";
+  created_at: string;
+  sent_at: string | null;
+}
+
+/**
+ * Subscriptions for the admin list — newest first, capped at 500
+ * by the function. Null filters mean "all". Throws when the
+ * function rejects (e.g. migration 0013 not run yet) — callers
+ * that render a page catch that and show the setup message.
+ */
+export async function adminListStockAlertSubscriptions(
+  productId: string | null,
+  status: AdminStockAlertSubscription["status"] | null,
+): Promise<AdminStockAlertSubscription[]> {
+  const result = await callAdminRpc<AdminStockAlertSubscription[]>(
+    "list_stock_alert_subscriptions",
+    { p_product_id: productId, p_status: status },
+  );
+  if (!result.ok) {
+    throw new Error("Could not load stock alert subscriptions.");
+  }
+  return result.data ?? [];
+}
+
+/**
+ * Atomically claim pending subscriptions for sending — flips the
+ * given rows from 'pending' to 'sent' and returns only the rows
+ * that were still 'pending', each with its email + unsubscribe
+ * token. Used by the inventory restock trigger (see
+ * lib/order-email.ts sendBackInStockAlertsForProduct).
+ */
+export async function adminClaimStockAlerts(
+  productId: string,
+  ids: string[],
+): Promise<
+  Array<{ id: string; email: string; unsubscribeToken: string }>
+> {
+  const result = await callAdminRpc<
+    Array<{ id: string; email: string; unsubscribe_token: string }>
+  >("mark_stock_alerts_sent", {
+    p_product_id: productId,
+    p_ids: ids,
+  });
+  if (!result.ok) {
+    throw new Error("Could not send stock alerts.");
+  }
+  return (result.data ?? []).map((row) => ({
+    id: row.id,
+    email: row.email,
+    unsubscribeToken: row.unsubscribe_token,
+  }));
 }
 
 // ---------------------------------------------------------------------------

@@ -53,6 +53,7 @@ const NAV = [
   { href: "/admin/products", label: "Products" },
   { href: "/admin/categories", label: "Categories" },
   { href: "/admin/inventory", label: "Inventory" },
+  { href: "/admin/stock-alerts", label: "Stock Alerts" },
   { href: "/admin/customers", label: "Customers" },
   { href: "/admin/orders", label: "Orders" },
   { href: "/admin/reviews", label: "Reviews" },

@@ -1,6 +1,8 @@
 import nodemailer from "nodemailer";
 import {
+  adminClaimStockAlerts,
   adminGetOrder,
+  adminListStockAlertSubscriptions,
   logNotificationAttempt,
 } from "@/app/admin/(protected)/admin-data";
 import { DELIVERY_OPTIONS, PAYMENT_METHODS } from "@/lib/demo-config";
@@ -35,8 +37,9 @@ import {
  *   short timeout (EMAIL_SEND_TIMEOUT_MS) so a hung SMTP connection
  *   cannot stall the checkout response.
  *
- * No other emails live here: no admin, marketing, back-in-stock, or
- * payment email. Those are future work, only if the owner asks.
+ * No other emails live here: no admin, marketing, or payment email.
+ * Those are future work, only if the owner asks. Back-in-stock
+ * alerts live here too — see the section at the bottom.
  *
  * Order status emails (S-7, 1.x-4, F18) live here too — see
  * ORDER_STATUS_EMAIL_TRIGGERS below. One short email per admin
@@ -583,5 +586,236 @@ export async function sendOrderStatusEmail(input: {
       reason: "send failed",
     });
     return { status: "failed", reason: "send failed" };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Back-in-stock alerts (S-7 — no documented scope; owner-approved
+// standard setup, see the S-7 back-in-stock investigation note)
+// ---------------------------------------------------------------------------
+
+/**
+ * Pure builder: back-in-stock alert for one subscriber. Same shape
+ * as the order emails (subject / text / html, no secrets), but with
+ * two deliberate differences: NO price (it can change between the
+ * alert and the click — the PDP is the source of truth), and an
+ * unsubscribe link in text AND html (required here, unlike the
+ * order emails: this is an opt-in alert, not a transactional
+ * order email — the link is what makes the consent revocable).
+ * First-come-first-served is stated plainly: the shop has no hold
+ * mechanism, so the email must never imply one.
+ */
+export function buildBackInStockEmail(
+  product: { name: string; slug: string },
+  recipient: string,
+  fromAddress: string,
+  unsubscribeToken: string,
+): OrderConfirmationEmail {
+  const productUrl = `${SITE_URL}/product/${product.slug}`;
+  const unsubscribeUrl = `${SITE_URL}/api/stock-alerts/unsubscribe?token=${unsubscribeToken}`;
+  const subject = `Good news — ${product.name} is back in stock`;
+
+  const text = [
+    `Hi,`,
+    ``,
+    `The ${product.name} you asked about is back in stock at RabbY. You can see it here: ${productUrl}`,
+    ``,
+    `Items sell in the order customers buy them — we can't hold one for you, so if you want it, order soon.`,
+    ``,
+    `You asked to be told when this was back in stock — you won't hear from us about it again. If you don't want these emails, unsubscribe here: ${unsubscribeUrl}`,
+    ``,
+    `Thank you for shopping with RabbY.`,
+  ].join("\n");
+
+  const html = [
+    `<p>Hi,</p>`,
+    `<p>The <strong>${escapeHtml(product.name)}</strong> you asked about is back in stock at RabbY. You can see it here: <a href="${productUrl}">${escapeHtml(productUrl)}</a></p>`,
+    `<p>Items sell in the order customers buy them — we can't hold one for you, so if you want it, order soon.</p>`,
+    `<p>You asked to be told when this was back in stock — you won't hear from us about it again. If you don't want these emails, <a href="${unsubscribeUrl}">unsubscribe here</a>.</p>`,
+    `<p>Thank you for shopping with RabbY.</p>`,
+  ].join("\n");
+
+  return {
+    from: `RabbY <${fromAddress}>`,
+    to: recipient,
+    subject,
+    text,
+    html,
+  };
+}
+
+/**
+ * Best-effort write to notification_log for a back-in-stock attempt
+ * (migration 0013 extends the type CHECK with 'back_in_stock').
+ * Same guarantees as logStatusEmailAttempt: never throws, recipient
+ * in the admin-only table only. The order_reference slot holds the
+ * product slug — there is no order here; the slug is what the admin
+ * queries by.
+ */
+async function logBackInStockAttempt(input: {
+  productSlug: string;
+  recipient: string | null;
+  result: EmailSendStatus;
+  reason?: string;
+}): Promise<void> {
+  try {
+    await logNotificationAttempt({
+      orderReference: input.productSlug,
+      type: "back_in_stock",
+      status: "back_in_stock",
+      recipient: input.recipient,
+      result: input.result,
+      error: input.result === "sent" ? null : (input.reason ?? null),
+    });
+  } catch {
+    // Best-effort audit log — see above.
+  }
+}
+
+/**
+ * Send one back-in-stock alert. NEVER throws: every failure path
+ * returns { status: "failed" } (or "skipped" when email is not
+ * configured) after a server-side log carrying only the product
+ * slug + a plain-words reason — never the subscriber email, never
+ * a secret.
+ */
+export async function sendBackInStockAlert(input: {
+  productName: string;
+  productSlug: string;
+  recipient: string;
+  unsubscribeToken: string;
+}): Promise<EmailSendResult> {
+  const user = process.env.GMAIL_USER;
+  const pass = process.env.GMAIL_APP_PASSWORD;
+  if (!user || !pass) {
+    // Email not configured (local dev, CI, or env vars not set yet):
+    // skip silently. The subscription itself is unaffected — the
+    // trigger helper only claims rows when the send path is live.
+    await logBackInStockAttempt({
+      productSlug: input.productSlug,
+      recipient: null,
+      result: "skipped",
+      reason: "email not configured",
+    });
+    return { status: "skipped", reason: "email not configured" };
+  }
+
+  try {
+    const email = buildBackInStockEmail(
+      { name: input.productName, slug: input.productSlug },
+      input.recipient,
+      user,
+      input.unsubscribeToken,
+    );
+    const transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: { user, pass },
+      connectionTimeout: 8000,
+      socketTimeout: 8000,
+    });
+    await withTimeout(
+      transporter.sendMail({
+        from: email.from,
+        to: email.to,
+        subject: email.subject,
+        text: email.text,
+        html: email.html,
+      }),
+      EMAIL_SEND_TIMEOUT_MS,
+    );
+    await logBackInStockAttempt({
+      productSlug: input.productSlug,
+      recipient: input.recipient,
+      result: "sent",
+    });
+    return { status: "sent" };
+  } catch (error) {
+    console.error(
+      "[order-email] back-in-stock alert failed",
+      input.productSlug,
+      error instanceof Error ? error.message : "unknown error",
+    );
+    await logBackInStockAttempt({
+      productSlug: input.productSlug,
+      recipient: input.recipient,
+      result: "failed",
+      reason: "send failed",
+    });
+    return { status: "failed", reason: "send failed" };
+  }
+}
+
+/**
+ * Send back-in-stock alerts for one restocked product (S-7).
+ * Called by POST /api/admin/inventory after a 0 -> >0 crossing on
+ * an active product. NEVER throws: a failed send never fails the
+ * inventory save.
+ *
+ * Order of operations matters: when email is not configured, the
+ * pending rows are NOT claimed — they stay pending, so a later
+ * restock (after the env vars are set) still alerts them. Only
+ * when the send path is live are the rows claimed (atomically, by
+ * mark_stock_alerts_sent) before sending, so two quick saves can
+ * never email the same person twice. A claimed row whose send
+ * fails stays 'sent' — the failure is in notification_log, and
+ * the customer can re-subscribe.
+ */
+export async function sendBackInStockAlertsForProduct(input: {
+  productId: string;
+  productName: string;
+  productSlug: string;
+}): Promise<{ sent: number; failed: number; skipped: number }> {
+  const zero = { sent: 0, failed: 0, skipped: 0 };
+  try {
+    const pending = await adminListStockAlertSubscriptions(
+      input.productId,
+      "pending",
+    );
+    if (pending.length === 0) {
+      return zero;
+    }
+    const user = process.env.GMAIL_USER;
+    const pass = process.env.GMAIL_APP_PASSWORD;
+    if (!user || !pass) {
+      // No email to send with — leave the rows pending and log one
+      // skipped attempt each, so the admin can see the gap in the
+      // log instead of silently consuming the subscriptions.
+      for (const row of pending) {
+        await logBackInStockAttempt({
+          productSlug: input.productSlug,
+          recipient: row.email,
+          result: "skipped",
+          reason: "email not configured",
+        });
+      }
+      return { sent: 0, failed: 0, skipped: pending.length };
+    }
+    const claimed = await adminClaimStockAlerts(
+      input.productId,
+      pending.map((row) => row.id),
+    );
+    let sent = 0;
+    let failed = 0;
+    for (const row of claimed) {
+      const result = await sendBackInStockAlert({
+        productName: input.productName,
+        productSlug: input.productSlug,
+        recipient: row.email,
+        unsubscribeToken: row.unsubscribeToken,
+      });
+      if (result.status === "sent") {
+        sent += 1;
+      } else {
+        failed += 1;
+      }
+    }
+    return { sent, failed, skipped: 0 };
+  } catch (error) {
+    console.error(
+      "[order-email] back-in-stock alerts failed",
+      input.productSlug,
+      error instanceof Error ? error.message : "unknown error",
+    );
+    return zero;
   }
 }
