@@ -177,6 +177,7 @@ beforeEach(() => {
       paymentNagadEnabled: true,
       paymentRocketEnabled: true,
       paymentCardEnabled: true,
+      paymentOnlineEnabled: false,
       websiteNotice: "",
       supportWhatsapp: "",
       supportMessenger: "",

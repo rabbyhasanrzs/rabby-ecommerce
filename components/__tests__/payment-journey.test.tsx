@@ -172,6 +172,7 @@ describe("payment journey (S-3, T-34 — API/page level, no browser E2E)", () =>
           paymentNagadEnabled: true,
           paymentRocketEnabled: true,
           paymentCardEnabled: true,
+          paymentOnlineEnabled: false,
           websiteNotice: "",
           supportWhatsapp: "",
           supportMessenger: "",
@@ -199,7 +200,7 @@ describe("payment journey (S-3, T-34 — API/page level, no browser E2E)", () =>
     expect(screen.getByText("৳3,315")).toBeInTheDocument();
 
     fillValidForm();
-    fireEvent.click(screen.getByLabelText(/bKash/));
+    fireEvent.click(screen.getByLabelText(/^bKash/));
     fireEvent.change(screen.getByLabelText("Transaction ID (TrxID)"), {
       target: { value: "9A1B2C3D4E" },
     });

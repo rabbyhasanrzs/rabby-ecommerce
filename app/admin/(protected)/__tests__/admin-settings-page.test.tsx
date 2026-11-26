@@ -44,6 +44,7 @@ vi.mock("@/lib/site-settings", () => ({
     paymentNagadEnabled: true,
     paymentRocketEnabled: true,
     paymentCardEnabled: true,
+    paymentOnlineEnabled: false,
     websiteNotice: "",
     supportWhatsapp: "",
     supportMessenger: "",

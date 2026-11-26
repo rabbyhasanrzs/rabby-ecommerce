@@ -150,7 +150,18 @@ const ADMIN_ORDER_FIXTURE: AdminOrderDetail = {
     },
   ],
   status_events: [],
-  payment: { method: "cod", status: "cod", reference: null, sender: null },
+  payment: {
+    method: "cod",
+    status: "cod",
+    reference: null,
+    sender: null,
+    gateway_session_key: null,
+    gateway_val_id: null,
+    gateway_bank_tran_id: null,
+    gateway_card_brand: null,
+    gateway_store_amount_bdt: null,
+    gateway_risk_level: null,
+  },
 };
 
 beforeEach(() => {

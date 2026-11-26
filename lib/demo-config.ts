@@ -28,11 +28,17 @@ export const DELIVERY_OPTIONS: Record<DeliveryZone, DeliveryOption> = {
   outside: { feeBdt: 120, label: "Outside Dhaka", estimate: "3–5 days" },
 };
 
-export type PaymentMethodId = "cod" | "bkash" | "nagad" | "rocket" | "card";
+export type PaymentMethodId =
+  | "cod"
+  | "bkash"
+  | "nagad"
+  | "rocket"
+  | "card"
+  | "online";
 
 export interface PaymentMethod {
   id: PaymentMethodId;
-  /** Checkout grouping, prototype order: COD first, Mobile Banking, Card. */
+  /** Checkout grouping, prototype order: COD first, Mobile Banking, Card, Online Payment. */
   group: string;
   label: string;
   note: string;
@@ -44,6 +50,10 @@ export interface PaymentMethod {
  * flow — the customer pays first, then enters the Transaction ID +
  * sender number; card details are NEVER collected, card payment is
  * confirmed after the order. No gateway, no real money moves in S-3.
+ * S-7 adds the real gateway: "online" ("Pay Online") redirects the
+ * customer to SSLCommerz after the order is created, and the payment
+ * settles through the IPN / return handlers. The manual methods stay
+ * alongside it; card details are still NEVER collected by this shop.
  */
 export const PAYMENT_METHODS: PaymentMethod[] = [
   {
@@ -75,5 +85,11 @@ export const PAYMENT_METHODS: PaymentMethod[] = [
     group: "Card",
     label: "Debit / Credit Card",
     note: "Card payment is confirmed after you place the order — no money moves in S-3.",
+  },
+  {
+    id: "online",
+    group: "Online Payment",
+    label: "Pay Online",
+    note: "Pay securely online with your card, bKash, Nagad, Rocket, or bank account. You'll be redirected to the secure payment page.",
   },
 ];

@@ -50,6 +50,12 @@ export interface SiteSettings {
   paymentNagadEnabled: boolean;
   paymentRocketEnabled: boolean;
   paymentCardEnabled: boolean;
+  /**
+   * S-7: the online gateway (SSLCommerz) toggle. OFF by default —
+   * the owner turns it on in Admin Settings only after the sandbox
+   * credentials are in. Sandbox / live is env-only, never a toggle.
+   */
+  paymentOnlineEnabled: boolean;
   websiteNotice: string;
   supportWhatsapp: string;
   supportMessenger: string;
@@ -69,6 +75,7 @@ export const DEFAULT_SETTINGS: SiteSettings = {
   paymentNagadEnabled: true,
   paymentRocketEnabled: true,
   paymentCardEnabled: true,
+  paymentOnlineEnabled: false,
   websiteNotice: "",
   supportWhatsapp: "",
   supportMessenger: "",
@@ -139,6 +146,10 @@ export function parseSiteSettingsRow(row: unknown): SiteSettings {
       typeof source.payment_card_enabled === "boolean"
         ? source.payment_card_enabled
         : DEFAULT_SETTINGS.paymentCardEnabled,
+    paymentOnlineEnabled:
+      typeof source.payment_online_enabled === "boolean"
+        ? source.payment_online_enabled
+        : DEFAULT_SETTINGS.paymentOnlineEnabled,
     websiteNotice:
       typeof source.website_notice === "string"
         ? source.website_notice
@@ -180,7 +191,8 @@ export async function getSiteSettings(): Promise<SiteSettings> {
           "delivery_inside_estimate, delivery_outside_fee_bdt, " +
           "delivery_outside_estimate, payment_cod_enabled, " +
           "payment_bkash_enabled, payment_nagad_enabled, " +
-          "payment_rocket_enabled, payment_card_enabled, website_notice, " +
+          "payment_rocket_enabled, payment_card_enabled, " +
+          "payment_online_enabled, website_notice, " +
           "support_whatsapp, support_messenger, support_phone, support_email",
       )
       .eq("id", 1)
@@ -275,6 +287,7 @@ export const siteSettingsFormSchema = z.object({
   paymentNagadEnabled: z.boolean(),
   paymentRocketEnabled: z.boolean(),
   paymentCardEnabled: z.boolean(),
+  paymentOnlineEnabled: z.boolean(),
   websiteNotice: z.string().max(500),
   supportWhatsapp: supportWhatsappSchema,
   supportMessenger: supportMessengerSchema,
@@ -299,6 +312,7 @@ export function parseSiteSettingsForm(
     paymentNagadEnabled: formData.get("paymentNagadEnabled") === "on",
     paymentRocketEnabled: formData.get("paymentRocketEnabled") === "on",
     paymentCardEnabled: formData.get("paymentCardEnabled") === "on",
+    paymentOnlineEnabled: formData.get("paymentOnlineEnabled") === "on",
     websiteNotice: text("websiteNotice"),
     supportWhatsapp: text("supportWhatsapp"),
     supportMessenger: text("supportMessenger"),

@@ -53,7 +53,7 @@ describe("SiteFooter finish (S-5)", () => {
 
     expect(
       screen.getByText(
-        /Payment methods: Cash on Delivery · bKash · Nagad · Rocket · Debit\/Credit Card \(coming soon\)/,
+        /Payment methods: Cash on Delivery · bKash · Nagad · Rocket · Online Payment \(Cards, bKash, Nagad, Rocket & more\)/,
       ),
     ).toBeInTheDocument();
     expect(
